@@ -1,3 +1,5 @@
+<img width="968" height="593" alt="image" src="https://github.com/user-attachments/assets/3ef40a75-2ebd-41a8-b677-a783e47ea211" />
+
 # distill
 
 Build a model of yourself — your preferences, workflows, friction points — from your Claude Code session history. Curate it through a local web UI. Promote the signal into Claude Code skills or CLAUDE.md entries.
