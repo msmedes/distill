@@ -150,4 +150,4 @@ You only need to reinstall if you move the binary or rename the `hook` subcomman
 
 ## License
 
-Unlicensed — learning project, not a product.
+MIT — see [`LICENSE`](./LICENSE).
