@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>distill</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-soft: #6b6b6b;
+      --fg-faint: #a8a8a8;
+      --bg: #fafaf9;
+      --bg-card: #ffffff;
+      --bg-card-muted: #f5f4f2;
+      --border: #e7e5e4;
+      --border-soft: #f0efed;
+      --accent: #b45309;
+      --accent-soft: #fef3c7;
+      --success: #15803d;
+      --success-soft: #dcfce7;
+      --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --sans: -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 32px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
+    h1 .dot { color: var(--accent); }
+    .meta {
+      font-size: 12px;
+      color: var(--fg-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .meta .sep { color: var(--fg-faint); margin: 0 8px; }
+    .filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-spacer { flex: 1; }
+    .propose-btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: lowercase;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--fg-soft);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 0;
+    }
+    .propose-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    button:disabled, button[data-busy] {
+      opacity: 0.55;
+      cursor: wait;
+      pointer-events: none;
+    }
+    .filter {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: lowercase;
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--fg-soft);
+      text-decoration: none;
+    }
+    .filter.active {
+      background: var(--fg);
+      color: var(--bg);
+      border-color: var(--fg);
+    }
+    .filter:hover:not(.active) {
+      border-color: var(--fg-soft);
+      color: var(--fg);
+    }
+    article {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+      transition: opacity 0.15s;
+    }
+    article.status-ignored {
+      opacity: 0.55;
+      background: var(--bg-card-muted);
+    }
+    article.status-promoted-skill,
+    article.status-promoted-claude-md {
+      background: var(--bg-card-muted);
+      border-color: var(--border);
+    }
+    article > header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .obs-id { color: var(--fg); }
+    .type {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--bg);
+    }
+    .count { font-variant-numeric: tabular-nums; }
+    .contradicted { color: var(--accent); }
+    .status-badge {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      text-transform: lowercase;
+    }
+    .status-badge.promoted {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+    .claim {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    details.evidence {
+      font-size: 12px;
+      color: var(--fg-soft);
+      margin-bottom: 12px;
+    }
+    details.evidence summary {
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      user-select: none;
+      list-style: none;
+    }
+    details.evidence summary::-webkit-details-marker { display: none; }
+    details.evidence summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 12px;
+      transition: transform 0.1s;
+    }
+    details.evidence[open] summary::before { transform: rotate(90deg); }
+    details.evidence summary:hover { color: var(--fg-soft); }
+    .evidence-list, .notes-list {
+      list-style: none;
+      padding: 8px 0 0 14px;
+      margin: 0;
+      border-left: 1px solid var(--border-soft);
+      margin-top: 6px;
+    }
+    .evidence-list li, .notes-list li { padding: 6px 0; }
+    .evidence-list li + li, .notes-list li + li { border-top: 1px solid var(--border-soft); }
+    .ev-meta, .note-meta {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--fg-faint);
+      margin-bottom: 4px;
+    }
+    .ev-meta .session { color: var(--fg-soft); }
+    .quote, .note-text {
+      display: block;
+      padding: 4px 0 4px 8px;
+      border-left: 2px solid var(--border);
+      color: var(--fg);
+      font-style: italic;
+      white-space: pre-wrap;
+    }
+    .notes-list { font-style: normal; }
+    .note-text { font-style: normal; border-left-color: var(--accent); }
+    .actions-toggle {
+      margin-top: 10px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .actions-toggle summary {
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      list-style: none;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      user-select: none;
+      letter-spacing: 0.1em;
+      line-height: 1.2;
+    }
+    .actions-toggle summary::-webkit-details-marker { display: none; }
+    .actions-toggle summary:hover {
+      color: var(--fg-soft);
+      border-color: var(--fg-faint);
+    }
+    .actions-toggle[open] summary {
+      background: var(--bg-card-muted);
+      color: var(--fg-soft);
+    }
+    .actions-toggle[open] {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .actions-toggle[open] summary { align-self: flex-end; }
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .actions-inline {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border);
+    }
+    .note-form {
+      display: flex;
+      gap: 6px;
+      flex: 1 1 240px;
+      min-width: 200px;
+    }
+    .note-form input {
+      flex: 1;
+      font-family: var(--sans);
+      font-size: 12px;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--fg);
+      outline: none;
+    }
+    .note-form input:focus { border-color: var(--fg-soft); }
+    .actions form { display: contents; }
+    .actions button, .btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg-soft);
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: lowercase;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    .actions button:hover, .btn:hover {
+      color: var(--fg);
+      border-color: var(--fg-soft);
+    }
+    .actions button.danger:hover { color: var(--accent); border-color: var(--accent); }
+    .actions button.promote:hover { color: var(--success); border-color: var(--success); }
+    .promoted-to {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+      padding: 4px 0;
+    }
+    .promoted-to code {
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+    .proposals {
+      margin: 0 0 12px 0;
+    }
+    .proposal {
+      background: var(--accent-soft);
+      border: 1px solid #f1d4a6;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .proposal-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: var(--accent);
+      color: white;
+      padding: 2px 7px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      line-height: 1.7;
+    }
+    .proposal-body {
+      flex: 1;
+      min-width: 200px;
+      color: #5a3613;
+      line-height: 1.5;
+    }
+    .proposal-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .proposal-actions button {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 9px;
+      border: 1px solid #d4a574;
+      background: white;
+      color: var(--accent);
+      border-radius: 3px;
+      cursor: pointer;
+      text-transform: lowercase;
+    }
+    .proposal-actions button:hover { background: var(--accent); color: white; }
+    .proposal-actions button.dismiss {
+      color: var(--fg-soft);
+      border-color: var(--border);
+    }
+    .proposal-actions button.dismiss:hover {
+      background: var(--bg);
+      color: var(--fg);
+      border-color: var(--fg-soft);
+    }
+    .actions-toggle summary svg {
+      width: 13px;
+      height: 13px;
+      display: block;
+    }
+    .empty {
+      text-align: center;
+      padding: 80px 0;
+      color: var(--fg-soft);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .empty code {
+      background: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>distill<span class="dot">.</span></h1>
+    <div class="meta">
+      {{.ObservationCount}} observation{{if ne .ObservationCount 1}}s{{end}}
+      <span class="sep">·</span>
+      {{.SessionsProcessed}} session{{if ne .SessionsProcessed 1}}s{{end}} processed
+    </div>
+  </header>
+
+  {{if gt .ObservationCount 0}}
+    <div class="filters">
+      <a class="filter {{if eq .Filter ""}}active{{end}}" href="/">all</a>
+      {{range .Types}}
+      <a class="filter {{if eq $.Filter .}}active{{end}}" href="/?type={{.}}">{{.}}</a>
+      {{end}}
+      <div class="filter-spacer"></div>
+      <form method="POST" action="/synthesize" data-busy-text="synthesizing…">
+        <button class="propose-btn" title="ask the model to propose promotions to skills / CLAUDE.md">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/><path d="m12 7 1.5 4.5L18 13l-4.5 1.5L12 19l-1.5-4.5L6 13l4.5-1.5z"/></svg>
+          propose promotions
+        </button>
+      </form>
+    </div>
+  {{end}}
+
+  {{if .Observations}}
+    {{range .Observations}}
+    {{- $obs := . -}}
+    <article class="status-{{.Status}}">
+      <header>
+        <span class="obs-id">{{.ID}}</span>
+        <span class="type">{{.Type}}</span>
+        <span class="count">count={{.EvidenceCount}}</span>
+        {{if .ContradictedBy}}<span class="contradicted">contradicted×{{len .ContradictedBy}}</span>{{end}}
+        {{if eq .Status "ignored"}}<span class="status-badge">ignored</span>{{end}}
+        {{if eq .Status "promoted-claude-md"}}<span class="status-badge promoted">→ CLAUDE.md</span>{{end}}
+        {{if eq .Status "promoted-skill"}}<span class="status-badge promoted">→ skill</span>{{end}}
+      </header>
+
+      <p class="claim">{{.Claim}}</p>
+
+      {{if .Proposals}}
+      <div class="proposals">
+        {{range .Proposals}}
+        <div class="proposal">
+          <span class="proposal-label">{{if eq .Kind "skill"}}skill proposal{{else}}CLAUDE.md proposal{{end}}</span>
+          <span class="proposal-body">{{.Reasoning}}</span>
+          <div class="proposal-actions">
+            <form method="POST" action="/obs/{{$obs.ID}}/accept-proposal" data-busy-text="applying…"><input type="hidden" name="kind" value="{{.Kind}}"><button>accept</button></form>
+            <form method="POST" action="/obs/{{$obs.ID}}/dismiss-proposal"><input type="hidden" name="kind" value="{{.Kind}}"><button class="dismiss">dismiss</button></form>
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Notes}}
+      <ul class="notes-list">
+        {{range .Notes}}
+        <li>
+          <div class="note-meta">note · {{shortTime .At}}</div>
+          <span class="note-text">{{.Text}}</span>
+        </li>
+        {{end}}
+      </ul>
+      {{end}}
+
+      <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
+        <summary>{{len .Evidence}} evidence</summary>
+        <ul class="evidence-list">
+          {{range .Evidence}}
+          <li>
+            <div class="ev-meta">
+              <span class="session">{{shortID .SessionID}}</span>
+              {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
+              {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
+            </div>
+            {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
+          </li>
+          {{end}}
+        </ul>
+      </details>
+
+      {{if eq .Status "active"}}
+        <details class="actions-toggle">
+          <summary title="actions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+          </summary>
+          <div class="actions">
+            <form class="note-form" method="POST" action="/obs/{{.ID}}/note">
+              <input name="text" placeholder="add a note…" autocomplete="off">
+              <button>save</button>
+            </form>
+            <form method="POST" action="/obs/{{.ID}}/ignore"><button class="danger">ignore</button></form>
+            <form method="POST" action="/obs/{{.ID}}/promote-claude-md"><button class="promote">→ CLAUDE.md</button></form>
+            <form method="POST" action="/obs/{{.ID}}/promote-skill" data-busy-text="extracting…"><button class="promote">→ skill</button></form>
+          </div>
+        </details>
+      {{else if eq .Status "ignored"}}
+        <div class="actions-inline">
+          <form method="POST" action="/obs/{{.ID}}/unignore"><button>unignore</button></form>
+        </div>
+      {{else}}
+        <div class="actions-inline">
+          <span class="promoted-to">written to <code>{{.PromotedTo}}</code></span>
+        </div>
+      {{end}}
+    </article>
+    {{end}}
+  {{else if gt .ObservationCount 0}}
+    <div class="empty">
+      no <code>{{.Filter}}</code> observations yet
+    </div>
+  {{else}}
+    <div class="empty">
+      no observations yet — run <code>distill extract</code>
+    </div>
+  {{end}}
+</div>
+<script>
+  // While a slow action is in flight, mark the submitting button so the page
+  // can't double-fire it. The browser stays on the same view until the server
+  // redirects, so we mutate the button in place rather than navigating away.
+  document.addEventListener("submit", (e) => {
+    const form = e.target;
+    const busyText = form.dataset?.busyText;
+    if (!busyText) return;
+    const btn = form.querySelector("button");
+    if (!btn || btn.dataset.busy) return;
+    btn.dataset.busy = "1";
+    btn.dataset.originalText = btn.textContent.trim();
+    btn.textContent = busyText;
+  }, true);
+</script>
+</body>
+</html>
