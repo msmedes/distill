@@ -22,6 +22,9 @@ A single static binary lands at `./distill`. No runtime dependencies.
 ## Quickstart
 
 ```sh
+# 0. (One-time) install the SessionEnd hook so future sessions extract automatically
+./distill install
+
 # 1. Walk recent sessions, emit observations
 ./distill extract --recent 20
 
@@ -47,6 +50,8 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `distill serve`      | Run the curation web UI (default `http://127.0.0.1:7373`). |
 | `distill list`       | Plain-text dump of accumulated observations. |
 | `distill compact`    | Dedup evidence entries (e.g. after `/resume` duplicated turns). |
+| `distill install`    | Install the Claude Code `SessionEnd` hook so extract runs automatically. |
+| `distill hook`       | Internal — invoked by the installed hook on session end. |
 | `distill help`       | Usage. |
 
 ### `extract` flags
@@ -119,8 +124,29 @@ Active. v1 ships per-session extraction, on-demand synthesis, full review/curati
 Known follow-ups:
 - **No observation decay.** The store accumulates indefinitely. Old observations stay weighted as if still relevant.
 - **No automatic dedup of near-duplicate observations.** Extract reinforces existing ones if the model recognizes them, but it sometimes creates new observations that are obvious duplicates. `compact` only handles evidence-level dedup, not observation-level.
-- **No session-end hook.** Extraction is manual today; the original design has a `SessionEnd` hook firing the binary detached. Not built yet.
 - **No retrieval layer.** Observations could feed in-context retrieval at query time (the "show me how Mike handled situations like this" layer). Not built yet.
+
+## Auto-extract on session end
+
+`distill install` writes a `SessionEnd` hook into `~/.claude/settings.json`. When a Claude Code session ends, the hook receives the session id on stdin and spawns `distill extract --session <id>` detached — Claude Code returns immediately, the extract runs in the background. Output goes to `~/.distill/hook.log`.
+
+```sh
+./distill install              # install the hook
+./distill install --uninstall  # remove it
+tail -f ~/.distill/hook.log    # watch extraction as sessions end
+```
+
+Re-running `install` is idempotent: if the hook is already wired to the same binary path, nothing changes; if the path moved, it rewrites in place. Other hooks in `settings.json` are preserved.
+
+### Developing distill with the hook live
+
+The hook stores the **absolute path** of whichever binary you ran `install` from — typically your in-repo `./distill`. So the dev loop is:
+
+1. Run `./distill install` once from your checkout.
+2. Iterate on source. Each `go build -o distill .` overwrites the binary at the same path.
+3. The next session-end fires the hook → uses your freshly built code.
+
+You only need to reinstall if you move the binary or rename the `hook` subcommand. `air` (see `.air.toml`) gives you save-to-rebuild for a tight loop.
 
 ## License
 

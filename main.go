@@ -17,6 +17,8 @@ Usage:
   distill list
   distill serve      [--port <n>] [--host <addr>]
   distill compact
+  distill install    [--uninstall]   # install/remove the Claude Code SessionEnd hook
+  distill hook                       # internal: invoked by the SessionEnd hook
 
 Examples:
   distill extract                    # process the most recent session
@@ -26,6 +28,7 @@ Examples:
   distill extract --dry-run          # show what would be extracted, don't write
   distill list                       # show accumulated observations
   distill serve                      # browse observations in your browser
+  distill install                    # auto-extract whenever a Claude Code session ends
 `
 
 func main() {
@@ -58,6 +61,16 @@ func main() {
 	case "synthesize":
 		if err := runSynthesize(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "synthesize: %v\n", err)
+			os.Exit(1)
+		}
+	case "install":
+		if err := runInstall(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "install: %v\n", err)
+			os.Exit(1)
+		}
+	case "hook":
+		if err := runHook(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "hook: %v\n", err)
 			os.Exit(1)
 		}
 	case "help", "--help", "-h":
