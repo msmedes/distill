@@ -220,12 +220,28 @@
     }
     .notes-list { font-style: normal; }
     .note-text { font-style: normal; border-left-color: var(--accent); }
-    .actions-toggle {
+    /* Grid lays out the evidence toggle and the actions pencil on the
+       same row; when the pencil is opened, the actions panel drops to
+       its own full-width row below via grid-column: 1 / -1.
+       display: contents on the <details> lets its summary and panel
+       become direct grid children. */
+    .card-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 8px 12px;
       margin-top: 10px;
-      display: flex;
-      justify-content: flex-end;
     }
-    .actions-toggle summary {
+    .card-bottom > details.evidence {
+      grid-column: 1;
+      grid-row: 1;
+      margin-bottom: 0;
+    }
+    .card-bottom > details.actions-toggle { display: contents; }
+    .actions-toggle > summary {
+      grid-column: 2;
+      grid-row: 1;
+      align-self: start;
       display: inline-flex;
       align-items: center;
       cursor: pointer;
@@ -241,26 +257,23 @@
       letter-spacing: 0.1em;
       line-height: 1.2;
     }
-    .actions-toggle summary::-webkit-details-marker { display: none; }
-    .actions-toggle summary:hover {
+    .actions-toggle > summary::-webkit-details-marker { display: none; }
+    .actions-toggle > summary:hover {
       color: var(--fg-soft);
       border-color: var(--fg-faint);
     }
-    .actions-toggle[open] summary {
+    .actions-toggle[open] > summary {
       background: var(--bg-card-muted);
       color: var(--fg-soft);
     }
-    .actions-toggle[open] {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .actions-toggle[open] summary { align-self: flex-end; }
-    .actions {
+    .actions-toggle > .actions { display: none; }
+    .actions-toggle[open] > .actions {
       display: flex;
+      grid-column: 1 / -1;
+      grid-row: 2;
       gap: 8px;
       align-items: stretch;
       flex-wrap: wrap;
-      margin-top: 10px;
     }
     .actions-inline {
       display: flex;
@@ -407,7 +420,7 @@
       color: var(--fg);
       border-color: var(--fg-soft);
     }
-    .actions-toggle summary svg {
+    .actions-toggle > summary svg {
       width: 13px;
       height: 13px;
       display: block;
@@ -500,42 +513,61 @@
       </ul>
       {{end}}
 
-      <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
-        <summary>{{len .Evidence}} evidence</summary>
-        <ul class="evidence-list">
-          {{range .Evidence}}
-          <li>
-            <div class="ev-meta">
-              <span class="session">{{shortID .SessionID}}</span>
-              {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
-              {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
-            </div>
-            {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
-          </li>
-          {{end}}
-        </ul>
-      </details>
-
       {{if eq .Status "active"}}
-        <details class="actions-toggle">
-          <summary title="actions">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-          </summary>
-          <div class="actions">
-            <form class="note-form" method="POST" action="/obs/{{.ID}}/note">
-              <input name="text" placeholder="add a note…" autocomplete="off">
-              <button>save</button>
-            </form>
-            <form method="POST" action="/obs/{{.ID}}/ignore"><button class="danger">ignore</button></form>
-            <form method="POST" action="/obs/{{.ID}}/promote-claude-md"><button class="promote">→ CLAUDE.md</button></form>
-            <form method="POST" action="/obs/{{.ID}}/promote-skill" data-busy-text="extracting…"><button class="promote">→ skill</button></form>
-          </div>
+        <div class="card-bottom">
+          <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
+            <summary>{{len .Evidence}} evidence</summary>
+            <ul class="evidence-list">
+              {{range .Evidence}}
+              <li>
+                <div class="ev-meta">
+                  <span class="session">{{shortID .SessionID}}</span>
+                  {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
+                  {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
+                </div>
+                {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
+              </li>
+              {{end}}
+            </ul>
+          </details>
+          <details class="actions-toggle">
+            <summary title="actions">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+            </summary>
+            <div class="actions">
+              <form class="note-form" method="POST" action="/obs/{{.ID}}/note">
+                <input name="text" placeholder="add a note…" autocomplete="off">
+                <button>save</button>
+              </form>
+              <form method="POST" action="/obs/{{.ID}}/ignore"><button class="danger">ignore</button></form>
+              <form method="POST" action="/obs/{{.ID}}/promote-claude-md"><button class="promote">→ CLAUDE.md</button></form>
+              <form method="POST" action="/obs/{{.ID}}/promote-skill" data-busy-text="extracting…"><button class="promote">→ skill</button></form>
+            </div>
+          </details>
+        </div>
+      {{else}}
+        <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
+          <summary>{{len .Evidence}} evidence</summary>
+          <ul class="evidence-list">
+            {{range .Evidence}}
+            <li>
+              <div class="ev-meta">
+                <span class="session">{{shortID .SessionID}}</span>
+                {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
+                {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
+              </div>
+              {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
+            </li>
+            {{end}}
+          </ul>
         </details>
-      {{else if eq .Status "ignored"}}
+      {{end}}
+
+      {{if eq .Status "ignored"}}
         <div class="actions-inline">
           <form method="POST" action="/obs/{{.ID}}/unignore"><button>unignore</button></form>
         </div>
-      {{else}}
+      {{else if ne .Status "active"}}
         <div class="actions-inline">
           <span class="promoted-to">written to <code>{{.PromotedTo}}</code></span>
         </div>
