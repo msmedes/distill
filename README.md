@@ -34,9 +34,8 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 ## Quickstart
 
 ```sh
-# 0. Configure watched products and promotion destinations, then start watching
+# 0. Configure watched products, promotion destinations, and automatic watching
 ./distill install
-./distill watch
 
 # 1. Walk recent Claude Code and Codex sessions, emit observations
 ./distill extract --recent 20
@@ -64,7 +63,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `distill serve`      | Run the curation web UI (default `http://127.0.0.1:7373`). |
 | `distill list`       | Plain-text dump of accumulated observations. |
 | `distill compact`    | Dedup evidence entries (e.g. after `/resume` duplicated turns). |
-| `distill install`    | Interactive setup for watched products and promotion destinations. |
+| `distill install`    | Interactive setup for watched products, promotion destinations, and automatic watching. |
 | `distill help`       | Usage. |
 
 ### `extract` flags
@@ -125,7 +124,7 @@ Promoted observations default to:
 - **Skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
 - **Always-on instructions:** appended to `~/.agents/AGENTS.md` under an `## Auto-extracted from distill` section. Raw append, no LLM rewrite — edit by hand to reshape.
 
-`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files.
+`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Finally, it asks whether to start `distill watch` automatically at login. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files.
 
 ## Architecture at a glance
 
@@ -177,7 +176,7 @@ The extractor does a cheap local pass before calling Claude. Short sessions with
 ./distill watch --quiet-for 30m         # wait longer before processing active files
 ```
 
-Run it under your preferred process supervisor when you want it to persist after the terminal closes. A launchd wrapper is intentionally not built into v1; the ingestion semantics are independent of process supervision.
+If you choose automatic watching during `install`, distill writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Logs go to `~/.distill/watch.log`. If you choose manual watching, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
 
 ## Smoke tests
 
@@ -185,7 +184,7 @@ Run it under your preferred process supervisor when you want it to persist after
 scripts/smoke-install.sh
 ```
 
-The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json`. It does not start `distill watch` and does not touch your real home directory.
+The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json` and launchd plist behavior. It does not start `distill watch` and does not touch your real home directory.
 
 ## License
 

@@ -7,9 +7,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+const launchdLabel = "com.msmedes.distill.watch"
+
+var launchctl = func(args ...string) error {
+	return exec.Command("launchctl", args...).Run()
+}
 
 func runInstall(args []string) error {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
@@ -39,6 +46,9 @@ func runInstall(args []string) error {
 		return err
 	}
 	if err := writePreferences(p, prefs); err != nil {
+		return err
+	}
+	if err := configureLaunchdWatcher(prefs); err != nil {
 		return err
 	}
 	printInstallSummary(os.Stdout, prefs)
@@ -74,6 +84,11 @@ func promptInstallPreferences(in io.Reader, out io.Writer, defaults preferences)
 	} else {
 		prefs.PromotionMode = promotionModeSeparate
 	}
+	autoWatch, err := promptBool(reader, out, "Watch sessions automatically at login instead of running manually?", true)
+	if err != nil {
+		return preferences{}, err
+	}
+	prefs.AutomaticWatch = autoWatch
 	return normalizePreferences(prefs)
 }
 
@@ -145,6 +160,108 @@ func ensureInstallTargets(prefs preferences) error {
 	return os.MkdirAll(prefs.SkillsDir, 0o755)
 }
 
+func configureLaunchdWatcher(prefs preferences) error {
+	plistPath, err := launchdPlistPath()
+	if err != nil {
+		return err
+	}
+	if !prefs.AutomaticWatch {
+		if err := unloadLaunchdWatcher(plistPath); err != nil {
+			return err
+		}
+		return nil
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving distill executable: %w", err)
+	}
+	if err := writeLaunchdPlist(plistPath, executable, prefs.watchProduct()); err != nil {
+		return err
+	}
+	if os.Getenv("DISTILL_TEST_LAUNCHD") == "1" {
+		return nil
+	}
+	_ = launchctl("unload", plistPath)
+	if err := launchctl("load", plistPath); err != nil {
+		return fmt.Errorf("loading launchd watcher: %w", err)
+	}
+	return nil
+}
+
+func unloadLaunchdWatcher(plistPath string) error {
+	_ = launchctl("unload", plistPath)
+	if err := os.Remove(plistPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func launchdPlistPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist"), nil
+}
+
+func writeLaunchdPlist(path, executable string, watchProduct product) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	logPath, err := launchdLogPath()
+	if err != nil {
+		return err
+	}
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>%s</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>%s</string>
+    <string>watch</string>
+    <string>--product</string>
+    <string>%s</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>%s</string>
+  <key>StandardErrorPath</key>
+  <string>%s</string>
+</dict>
+</plist>
+`, launchdLabel, xmlEscape(executable), xmlEscape(string(watchProduct)), xmlEscape(logPath), xmlEscape(logPath))
+	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+func launchdLogPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".distill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "watch.log"), nil
+}
+
+func xmlEscape(s string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&apos;",
+	)
+	return replacer.Replace(s)
+}
+
 func printInstallSummary(out io.Writer, prefs preferences) {
 	fmt.Fprintln(out, "saved distill preferences")
 	fmt.Fprintf(out, "  watch: %s\n", prefs.watchProduct())
@@ -155,6 +272,17 @@ func printInstallSummary(out io.Writer, prefs preferences) {
 		fmt.Fprintf(out, "  codex always-on:  %s\n", prefs.CodexAgentsPath)
 	}
 	fmt.Fprintf(out, "  skills: %s\n", prefs.SkillsDir)
+	if prefs.AutomaticWatch {
+		if plistPath, err := launchdPlistPath(); err == nil {
+			fmt.Fprintf(out, "  automatic watch: %s\n", plistPath)
+		} else {
+			fmt.Fprintln(out, "  automatic watch: enabled")
+		}
+	} else {
+		fmt.Fprintln(out, "  automatic watch: disabled")
+	}
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "run: distill watch --product %s\n", prefs.watchProduct())
+	if !prefs.AutomaticWatch {
+		fmt.Fprintf(out, "run manually: distill watch --product %s\n", prefs.watchProduct())
+	}
 }

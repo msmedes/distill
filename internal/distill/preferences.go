@@ -12,6 +12,7 @@ import (
 type preferences struct {
 	WatchClaude     bool   `json:"watch_claude"`
 	WatchCodex      bool   `json:"watch_codex"`
+	AutomaticWatch  bool   `json:"automatic_watch"`
 	PromotionMode   string `json:"promotion_mode"`
 	AlwaysOnPath    string `json:"always_on_path"`
 	ClaudeMDPath    string `json:"claude_md_path"`
@@ -32,6 +33,7 @@ func defaultPreferences() (preferences, error) {
 	return preferences{
 		WatchClaude:     true,
 		WatchCodex:      true,
+		AutomaticWatch:  true,
 		PromotionMode:   promotionModeUnified,
 		AlwaysOnPath:    filepath.Join(home, ".agents", "AGENTS.md"),
 		ClaudeMDPath:    filepath.Join(home, ".claude", "CLAUDE.md"),
