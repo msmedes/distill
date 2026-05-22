@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>distill help</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-soft: #6b6b6b;
+      --fg-faint: #a8a8a8;
+      --bg: #fafaf9;
+      --bg-card: #ffffff;
+      --bg-card-muted: #f5f4f2;
+      --border: #e7e5e4;
+      --border-soft: #f0efed;
+      --accent: #b45309;
+      --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --sans: -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.55;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 32px;
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
+    h1 .dot { color: var(--accent); }
+    .meta {
+      font-size: 12px;
+      color: var(--fg-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .meta a {
+      color: var(--fg-soft);
+      text-decoration: none;
+    }
+    .meta a:hover { color: var(--fg); }
+    .intro {
+      max-width: 68ch;
+      margin: 0 0 24px;
+      color: var(--fg-soft);
+    }
+    .section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+    .section h2 {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: lowercase;
+      margin-bottom: 10px;
+    }
+    .section p {
+      margin: 0;
+      max-width: 70ch;
+      color: var(--fg-soft);
+    }
+    .section p + p { margin-top: 10px; }
+    .faq {
+      margin: 0;
+      display: grid;
+      gap: 14px;
+    }
+    .faq dt {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg);
+      margin-bottom: 3px;
+    }
+    .faq dd {
+      margin: 0;
+      max-width: 72ch;
+      color: var(--fg-soft);
+    }
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg-card-muted);
+      border: 1px solid var(--border-soft);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--fg);
+    }
+    .rule-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--fg-soft);
+    }
+    .rule-list li + li { margin-top: 6px; }
+    .callout {
+      border-left: 2px solid var(--accent);
+      padding-left: 12px;
+      color: var(--fg);
+    }
+    @media (max-width: 560px) {
+      header.top {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>distill<span class="dot">.</span> help</h1>
+    <div class="meta"><a href="/">observations</a></div>
+  </header>
+
+  <p class="intro">
+    distill turns repeated signals from your Claude Code and Codex sessions into observations. You curate those observations, then choose whether any of them should become durable agent guidance.
+  </p>
+
+  <section class="section">
+    <h2>promotion destinations</h2>
+    <dl class="faq">
+      <div>
+        <dt>What does always-on mean?</dt>
+        <dd>Always-on is your configured agent instruction file. Promote a short, stable preference there when you want it to apply in every future session.</dd>
+      </div>
+      <div>
+        <dt>What is a skill?</dt>
+        <dd>A skill is a generated <code>SKILL.md</code> file for situational guidance: a workflow, domain, repo pattern, or task type that should load only when it is relevant.</dd>
+      </div>
+      <div>
+        <dt>What is skills dir?</dt>
+        <dd>The skills directory is where distill writes generated skill folders. By default that is <code>~/.agents/skills/&lt;name&gt;/SKILL.md</code>.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="section">
+    <h2>choosing a destination</h2>
+    <ul class="rule-list">
+      <li>Use always-on for terse rules that should shape every agent session.</li>
+      <li>Use a skill for guidance that depends on a task, repo, tool, or workflow.</li>
+      <li>Leave the observation active if the signal is plausible but not yet durable enough.</li>
+      <li>Ignore an observation when it is wrong, stale, too noisy, or not worth preserving.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>proposals</h2>
+    <p>Proposals are recommendations, not writes. The model can suggest that an observation belongs in always-on instructions or in a skill, but distill does not modify those files until you accept a proposal or use a promotion action.</p>
+    <p class="callout">Accepting a proposal is the commit point. Before that, the observation is just local curation data.</p>
+  </section>
+
+  <section class="section">
+    <h2>what gets written</h2>
+    <dl class="faq">
+      <div>
+        <dt>Always-on promotion</dt>
+        <dd>distill appends a short bullet to the configured instruction file under its distill-managed section.</dd>
+      </div>
+      <div>
+        <dt>Skill promotion</dt>
+        <dd>distill asks the model to turn the observation, evidence, and notes into a compact skill file, then writes it under the configured skills directory.</dd>
+      </div>
+      <div>
+        <dt>Source sessions</dt>
+        <dd>distill reads Claude Code and Codex transcripts. It does not modify source session files.</dd>
+      </div>
+    </dl>
+  </section>
+</div>
+</body>
+</html>

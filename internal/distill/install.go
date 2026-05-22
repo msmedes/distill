@@ -285,4 +285,6 @@ func printInstallSummary(out io.Writer, prefs preferences) {
 	if !prefs.AutomaticWatch {
 		fmt.Fprintf(out, "run manually: distill watch --product %s\n", prefs.watchProduct())
 	}
+	fmt.Fprintln(out, "open the web UI: distill serve")
+	fmt.Fprintln(out, "then visit: http://127.0.0.1:7373")
 }

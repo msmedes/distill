@@ -36,6 +36,7 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 ```sh
 # 0. Configure watched products, promotion destinations, and automatic watching
 ./distill install
+# installer prints the web UI command and URL
 
 # 1. Walk recent Claude Code and Codex sessions, emit observations
 ./distill extract --recent 20
@@ -177,6 +178,8 @@ The extractor does a cheap local pass before calling Claude. Short sessions with
 ```
 
 If you choose automatic watching during `install`, distill writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Logs go to `~/.distill/watch.log`. If you choose manual watching, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
+
+`install` does not keep the web server running. At the end it prints `distill serve` and `http://127.0.0.1:7373`; run that command whenever you want to review observations, accept proposals, or change promotion destinations.
 
 ## Smoke tests
 

@@ -132,6 +132,43 @@ func TestConfigureLaunchdWatcherManualRemovesPlist(t *testing.T) {
 	}
 }
 
+func TestPrintInstallSummaryShowsWebUINextStep(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	prefs, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+
+	printInstallSummary(&out, prefs)
+	got := out.String()
+	if !strings.Contains(got, "open the web UI: distill serve") {
+		t.Fatalf("summary missing serve command:\n%s", got)
+	}
+	if !strings.Contains(got, "then visit: http://127.0.0.1:7373") {
+		t.Fatalf("summary missing web UI URL:\n%s", got)
+	}
+}
+
+func TestPrintInstallSummaryKeepsManualWatchCommand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	prefs, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefs.AutomaticWatch = false
+	var out bytes.Buffer
+
+	printInstallSummary(&out, prefs)
+	got := out.String()
+	if !strings.Contains(got, "run manually: distill watch --product all") {
+		t.Fatalf("summary missing manual watch command:\n%s", got)
+	}
+	if !strings.Contains(got, "open the web UI: distill serve") {
+		t.Fatalf("summary missing serve command:\n%s", got)
+	}
+}
+
 func mustReadFile(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(path)

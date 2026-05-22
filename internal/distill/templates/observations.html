@@ -55,6 +55,11 @@
       font-variant-numeric: tabular-nums;
     }
     .meta .sep { color: var(--fg-faint); margin: 0 8px; }
+    .meta a {
+      color: var(--fg-soft);
+      text-decoration: none;
+    }
+    .meta a:hover { color: var(--fg); }
     .filters {
       display: flex;
       gap: 6px;
@@ -633,6 +638,8 @@
       {{.ObservationCount}} observation{{if ne .ObservationCount 1}}s{{end}}
       <span class="sep">·</span>
       {{.SessionsProcessed}} session{{if ne .SessionsProcessed 1}}s{{end}} processed
+      <span class="sep">·</span>
+      <a href="/help">help</a>
     </div>
   </header>
 

@@ -41,6 +41,7 @@ func runServe(args []string) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.handleIndex)
+	mux.HandleFunc("/help", srv.handleHelp)
 	mux.HandleFunc("/obs/", srv.handleObsAction)
 	mux.HandleFunc("/synthesize", srv.handleSynthesize)
 	mux.HandleFunc("/settings", srv.handleSettings)
@@ -73,6 +74,7 @@ func runServe(args []string) error {
 type server struct {
 	paths     paths
 	indexTmpl *template.Template
+	helpTmpl  *template.Template
 }
 
 func (s *server) loadTemplates() error {
@@ -114,6 +116,11 @@ func (s *server) loadTemplates() error {
 		return err
 	}
 	s.indexTmpl = tmpl
+	helpTmpl, err := template.ParseFS(templatesFS, "templates/help.html")
+	if err != nil {
+		return err
+	}
+	s.helpTmpl = helpTmpl
 	return nil
 }
 
@@ -187,6 +194,21 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.indexTmpl.Execute(w, data); err != nil {
 		log.Printf("template execute: %v", err)
+	}
+}
+
+func (s *server) handleHelp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.Path != "/help" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.helpTmpl.Execute(w, nil); err != nil {
+		log.Printf("help template execute: %v", err)
 	}
 }
 
