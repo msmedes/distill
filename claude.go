@@ -40,7 +40,6 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 		"--output-format", "text",
 		"--no-session-persistence",
 		"--disable-slash-commands",
-		"--tools", "",
 	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(prompt)
