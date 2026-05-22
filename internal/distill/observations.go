@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -103,24 +104,9 @@ func readObservations(path string) ([]observation, error) {
 		}
 		var o observation
 		if err := json.Unmarshal(line, &o); err != nil {
-			fmt.Fprintf(os.Stderr, "warn: skipping malformed observation: %v\n", err)
-			continue
+			return nil, fmt.Errorf("malformed observation record: %w", err)
 		}
-		if o.ContradictedBy == nil {
-			o.ContradictedBy = []string{}
-		}
-		if o.Evidence == nil {
-			o.Evidence = []evidence{}
-		}
-		if o.Notes == nil {
-			o.Notes = []note{}
-		}
-		if o.Proposals == nil {
-			o.Proposals = []proposal{}
-		}
-		if o.Status == "" {
-			o.Status = statusActive
-		}
+		normalizeObservation(&o)
 		out = append(out, o)
 	}
 	if err := scanner.Err(); err != nil && err != io.EOF {
@@ -130,11 +116,15 @@ func readObservations(path string) ([]observation, error) {
 }
 
 func writeObservations(path string, obs []observation) error {
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
 	w := bufio.NewWriter(f)
 	enc := json.NewEncoder(w)
 	for _, o := range obs {
@@ -151,6 +141,24 @@ func writeObservations(path string, obs []observation) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func normalizeObservation(o *observation) {
+	if o.ContradictedBy == nil {
+		o.ContradictedBy = []string{}
+	}
+	if o.Evidence == nil {
+		o.Evidence = []evidence{}
+	}
+	if o.Notes == nil {
+		o.Notes = []note{}
+	}
+	if o.Proposals == nil {
+		o.Proposals = []proposal{}
+	}
+	if o.Status == "" {
+		o.Status = statusActive
+	}
 }
 
 func nextObservationID(existing []observation) string {

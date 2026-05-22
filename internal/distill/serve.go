@@ -114,7 +114,8 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	obs, err := readObservations(s.paths.observationFile)
+	st := newStore(s.paths)
+	obs, err := st.readObservations()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("reading observations: %v", err), http.StatusInternalServerError)
 		return
@@ -142,11 +143,12 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return filtered[i].LastSeen > filtered[j].LastSeen
 	})
 
-	state, _ := readState(s.paths.stateFile)
-	sessionsProcessed := 0
-	if state != nil {
-		sessionsProcessed = len(state.ProcessedSessions)
+	state, err := st.readState()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reading state: %v", err), http.StatusInternalServerError)
+		return
 	}
+	sessionsProcessed := len(state.ProcessedSessions)
 
 	data := indexData{
 		Observations:      filtered,

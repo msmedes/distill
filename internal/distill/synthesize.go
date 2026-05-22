@@ -57,10 +57,8 @@ func runSynthesize(args []string) error {
 // attaches LLM-proposed promotions. Returns the number of newly-attached
 // proposals (proposals already present on an observation are skipped).
 func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, error) {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
+	st := newStore(p)
+	obs, err := st.readObservations()
 	if err != nil {
 		return 0, err
 	}
@@ -87,32 +85,32 @@ func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, erro
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	added := 0
-	for _, prop := range resp.Proposals {
-		if prop.Kind != proposalSkill && prop.Kind != proposalClaudeMD {
-			continue
+	_, err = st.updateObservationsIfChanged(func(obs []observation) ([]observation, bool, error) {
+		for _, prop := range resp.Proposals {
+			if prop.Kind != proposalSkill && prop.Kind != proposalClaudeMD {
+				continue
+			}
+			i, ok := findObservation(obs, prop.ObsID)
+			if !ok {
+				continue
+			}
+			if obs[i].Status != statusActive {
+				continue
+			}
+			if hasProposalOfKind(obs[i].Proposals, prop.Kind) {
+				continue
+			}
+			obs[i].Proposals = append(obs[i].Proposals, proposal{
+				Kind:      prop.Kind,
+				At:        now,
+				Reasoning: strings.TrimSpace(prop.Reasoning),
+			})
+			added++
 		}
-		i, ok := findObservation(obs, prop.ObsID)
-		if !ok {
-			continue
-		}
-		if obs[i].Status != statusActive {
-			continue
-		}
-		if hasProposalOfKind(obs[i].Proposals, prop.Kind) {
-			continue
-		}
-		obs[i].Proposals = append(obs[i].Proposals, proposal{
-			Kind:      prop.Kind,
-			At:        now,
-			Reasoning: strings.TrimSpace(prop.Reasoning),
-		})
-		added++
-	}
-
-	if added > 0 {
-		if err := writeObservations(p.observationFile, obs); err != nil {
-			return added, err
-		}
+		return obs, added > 0, nil
+	})
+	if err != nil {
+		return added, err
 	}
 	return added, nil
 }

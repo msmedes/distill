@@ -515,21 +515,7 @@
 
       {{if eq .Status "active"}}
         <div class="card-bottom">
-          <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
-            <summary>{{len .Evidence}} evidence</summary>
-            <ul class="evidence-list">
-              {{range .Evidence}}
-              <li>
-                <div class="ev-meta">
-                  <span class="session">{{shortID .SessionID}}</span>
-                  {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
-                  {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
-                </div>
-                {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
-              </li>
-              {{end}}
-            </ul>
-          </details>
+          {{template "evidence" .}}
           <details class="actions-toggle">
             <summary title="actions">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
@@ -546,21 +532,7 @@
           </details>
         </div>
       {{else}}
-        <details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
-          <summary>{{len .Evidence}} evidence</summary>
-          <ul class="evidence-list">
-            {{range .Evidence}}
-            <li>
-              <div class="ev-meta">
-                <span class="session">{{shortID .SessionID}}</span>
-                {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
-                {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
-              </div>
-              {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
-            </li>
-            {{end}}
-          </ul>
-        </details>
+        {{template "evidence" .}}
       {{end}}
 
       {{if eq .Status "ignored"}}
@@ -601,3 +573,21 @@
 </script>
 </body>
 </html>
+
+{{define "evidence"}}
+<details class="evidence" {{if le (len .Evidence) 1}}open{{end}}>
+  <summary>{{len .Evidence}} evidence</summary>
+  <ul class="evidence-list">
+    {{range .Evidence}}
+    <li>
+      <div class="ev-meta">
+        <span class="session">{{shortID .SessionID}}</span>
+        {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
+        {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}
+      </div>
+      {{if .Quote}}<span class="quote">{{.Quote}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+</details>
+{{end}}

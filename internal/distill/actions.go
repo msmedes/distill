@@ -8,14 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 )
-
-// storeMu serializes all observation-store mutations from the HTTP server.
-// (Cross-process races with the CLI's extract command are out of scope for v1;
-// in practice you don't run extract and click around at the same time.)
-var storeMu sync.Mutex
 
 const claudeMDSectionHeader = "## Auto-extracted from distill"
 
@@ -34,90 +28,59 @@ func findObservation(obs []observation, id string) (int, bool) {
 	return -1, false
 }
 
+func removeProposalsOfKind(proposals []proposal, kind string) []proposal {
+	kept := proposals[:0]
+	for _, pr := range proposals {
+		if pr.Kind == kind {
+			continue
+		}
+		kept = append(kept, pr)
+	}
+	if kept == nil {
+		return []proposal{}
+	}
+	return kept
+}
+
 // acceptProposal accepts the named proposal on an observation by firing the
 // corresponding promote action, then clears all pending proposals on that
 // observation (acceptance retires the rest implicitly).
 func acceptProposal(ctx context.Context, p paths, id, kind string) (actionResult, error) {
 	switch kind {
 	case proposalSkill:
-		res, err := promoteToSkill(ctx, p, id)
-		if err != nil {
-			return res, err
-		}
-		_ = clearProposals(p, id)
-		return res, nil
+		return promoteToSkill(ctx, p, id)
 	case proposalClaudeMD:
-		res, err := promoteToClaudeMD(p, id)
-		if err != nil {
-			return res, err
-		}
-		_ = clearProposals(p, id)
-		return res, nil
+		return promoteToClaudeMD(p, id)
 	}
 	return actionResult{}, fmt.Errorf("unknown proposal kind: %s", kind)
 }
 
 func dismissProposal(p paths, id, kind string) (actionResult, error) {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
-	if err != nil {
-		return actionResult{}, err
-	}
-	i, ok := findObservation(obs, id)
-	if !ok {
-		return actionResult{}, fmt.Errorf("observation %s not found", id)
-	}
-	kept := obs[i].Proposals[:0]
-	for _, pr := range obs[i].Proposals {
-		if pr.Kind == kind {
-			continue
+	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
+		i, ok := findObservation(obs, id)
+		if !ok {
+			return nil, fmt.Errorf("observation %s not found", id)
 		}
-		kept = append(kept, pr)
-	}
-	obs[i].Proposals = kept
-	if err := writeObservations(p.observationFile, obs); err != nil {
+		obs[i].Proposals = removeProposalsOfKind(obs[i].Proposals, kind)
+		return obs, nil
+	}); err != nil {
 		return actionResult{}, err
 	}
 	return actionResult{OK: true, Message: "dismissed"}, nil
 }
 
-func clearProposals(p paths, id string) error {
-	// promote* released storeMu on return; we re-acquire here for the small
-	// follow-up write. Two-step is non-atomic — the UI may briefly show
-	// status=promoted alongside a stale proposal — acceptable for v1.
-	storeMu.Lock()
-	defer storeMu.Unlock()
-	obs, err := readObservations(p.observationFile)
-	if err != nil {
-		return err
-	}
-	i, ok := findObservation(obs, id)
-	if !ok {
-		return nil
-	}
-	obs[i].Proposals = []proposal{}
-	return writeObservations(p.observationFile, obs)
-}
-
 func setStatus(p paths, id, status string) (actionResult, error) {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
-	if err != nil {
-		return actionResult{}, err
-	}
-	i, ok := findObservation(obs, id)
-	if !ok {
-		return actionResult{}, fmt.Errorf("observation %s not found", id)
-	}
-	obs[i].Status = status
-	if status == statusActive {
-		obs[i].PromotedTo = ""
-	}
-	if err := writeObservations(p.observationFile, obs); err != nil {
+	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
+		i, ok := findObservation(obs, id)
+		if !ok {
+			return nil, fmt.Errorf("observation %s not found", id)
+		}
+		obs[i].Status = status
+		if status == statusActive {
+			obs[i].PromotedTo = ""
+		}
+		return obs, nil
+	}); err != nil {
 		return actionResult{}, err
 	}
 	return actionResult{OK: true, Message: status}, nil
@@ -129,63 +92,53 @@ func addNote(p paths, id, text string) (actionResult, error) {
 		return actionResult{}, fmt.Errorf("empty note")
 	}
 
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
-	if err != nil {
-		return actionResult{}, err
-	}
-	i, ok := findObservation(obs, id)
-	if !ok {
-		return actionResult{}, fmt.Errorf("observation %s not found", id)
-	}
-	obs[i].Notes = append(obs[i].Notes, note{
-		At:   time.Now().UTC().Format(time.RFC3339),
-		Text: text,
-	})
-	if err := writeObservations(p.observationFile, obs); err != nil {
+	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
+		i, ok := findObservation(obs, id)
+		if !ok {
+			return nil, fmt.Errorf("observation %s not found", id)
+		}
+		obs[i].Notes = append(obs[i].Notes, note{
+			At:   time.Now().UTC().Format(time.RFC3339),
+			Text: text,
+		})
+		return obs, nil
+	}); err != nil {
 		return actionResult{}, err
 	}
 	return actionResult{OK: true, Message: "noted"}, nil
 }
 
 func promoteToClaudeMD(p paths, id string) (actionResult, error) {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
-	if err != nil {
-		return actionResult{}, err
-	}
-	i, ok := findObservation(obs, id)
-	if !ok {
-		return actionResult{}, fmt.Errorf("observation %s not found", id)
-	}
-	o := obs[i]
-
 	claudePath, err := claudeMDPath()
 	if err != nil {
 		return actionResult{}, err
 	}
 
-	if err := appendToClaudeMD(claudePath, o); err != nil {
-		return actionResult{}, err
-	}
-
-	obs[i].Status = statusPromotedClaudeMD
-	obs[i].PromotedTo = claudePath
-	if err := writeObservations(p.observationFile, obs); err != nil {
+	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
+		i, ok := findObservation(obs, id)
+		if !ok {
+			return nil, fmt.Errorf("observation %s not found", id)
+		}
+		if obs[i].Status == statusPromotedClaudeMD && obs[i].PromotedTo == claudePath {
+			obs[i].Proposals = []proposal{}
+			return obs, nil
+		}
+		if err := appendToClaudeMD(claudePath, obs[i]); err != nil {
+			return nil, err
+		}
+		obs[i].Status = statusPromotedClaudeMD
+		obs[i].PromotedTo = claudePath
+		obs[i].Proposals = []proposal{}
+		return obs, nil
+	}); err != nil {
 		return actionResult{}, err
 	}
 	return actionResult{OK: true, Message: "added to CLAUDE.md", PromotedTo: claudePath}, nil
 }
 
 func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, error) {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-
-	obs, err := readObservations(p.observationFile)
+	st := newStore(p)
+	obs, err := st.readObservations()
 	if err != nil {
 		return actionResult{}, err
 	}
@@ -194,6 +147,9 @@ func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, erro
 		return actionResult{}, fmt.Errorf("observation %s not found", id)
 	}
 	o := obs[i]
+	if o.Status == statusPromotedToSkill && o.PromotedTo != "" {
+		return actionResult{OK: true, Message: "skill extracted", PromotedTo: o.PromotedTo}, nil
+	}
 
 	gen, err := generateSkill(ctx, o)
 	if err != nil {
@@ -205,9 +161,23 @@ func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, erro
 		return actionResult{}, fmt.Errorf("writing skill: %w", err)
 	}
 
-	obs[i].Status = statusPromotedToSkill
-	obs[i].PromotedTo = skillPath
-	if err := writeObservations(p.observationFile, obs); err != nil {
+	if err := st.updateObservations(func(obs []observation) ([]observation, error) {
+		i, ok := findObservation(obs, id)
+		if !ok {
+			return nil, fmt.Errorf("observation %s not found", id)
+		}
+		if obs[i].Status == statusPromotedToSkill && obs[i].PromotedTo != "" {
+			return nil, fmt.Errorf("observation %s was already promoted to %s", id, obs[i].PromotedTo)
+		}
+		if obs[i].Status != statusActive {
+			return nil, fmt.Errorf("observation %s is no longer active", id)
+		}
+		obs[i].Status = statusPromotedToSkill
+		obs[i].PromotedTo = skillPath
+		obs[i].Proposals = []proposal{}
+		return obs, nil
+	}); err != nil {
+		_ = os.Remove(skillPath)
 		return actionResult{}, err
 	}
 	return actionResult{OK: true, Message: "skill extracted", PromotedTo: skillPath}, nil
@@ -230,6 +200,9 @@ func appendToClaudeMD(path string, o observation) error {
 	header := claudeMDSectionHeader
 	now := time.Now().UTC().Format("2006-01-02")
 	line := fmt.Sprintf("- %s _(distill %s, %s)_", o.Claim, o.ID, now)
+	if strings.Contains(src, fmt.Sprintf("_(distill %s,", o.ID)) {
+		return nil
+	}
 
 	var updated string
 	if strings.Contains(src, header) {

@@ -17,7 +17,7 @@ func runList(args []string) error {
 		return err
 	}
 
-	obs, err := readObservations(p.observationFile)
+	obs, err := newStore(p).readObservations()
 	if err != nil {
 		return err
 	}

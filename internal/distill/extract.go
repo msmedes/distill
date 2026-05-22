@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -96,7 +97,8 @@ func runExtract(args []string) error {
 		return err
 	}
 
-	state, err := readState(p.stateFile)
+	st := newStore(p)
+	state, err := st.readState()
 	if err != nil {
 		return err
 	}
@@ -119,7 +121,7 @@ func runExtract(args []string) error {
 	fmt.Printf("processing %d session(s)…\n\n", len(targets))
 
 	for _, s := range targets {
-		if err := processOne(p, state, s, opts); err != nil {
+		if err := processOne(st, state, s, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "  error: %v\n\n", err)
 			continue
 		}
@@ -128,7 +130,7 @@ func runExtract(args []string) error {
 	return nil
 }
 
-func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) error {
+func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) error {
 	cwdLabel := s.cwd
 	if cwdLabel == "" {
 		cwdLabel = "?"
@@ -141,7 +143,7 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 	}
 	if len(turns) == 0 {
 		fmt.Println("  (no user/assistant turns — skipping)")
-		markProcessed(p, state, s.sessionID, opts.dryRun)
+		markProcessed(st, state, s.sessionID, opts.dryRun)
 		fmt.Println()
 		return nil
 	}
@@ -150,7 +152,7 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 	if !opts.noSkip && shouldSkipExtraction(signal, opts) {
 		fmt.Printf("  low-signal session: %d user turn(s), %d user chars, no correction/preference markers — skipping claude call\n",
 			signal.userTurns, signal.userChars)
-		markProcessed(p, state, s.sessionID, opts.dryRun)
+		markProcessed(st, state, s.sessionID, opts.dryRun)
 		fmt.Println()
 		return nil
 	}
@@ -161,7 +163,7 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 		rendered = rendered[:opts.maxTranscriptChar] + "\n\n[...transcript truncated...]"
 	}
 
-	existing, err := readObservations(p.observationFile)
+	existing, err := st.readObservations()
 	if err != nil {
 		return fmt.Errorf("reading observations: %w", err)
 	}
@@ -208,11 +210,17 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 		return nil
 	}
 
-	updated := applyDeltas(existing, result, s)
-	if err := writeObservations(p.observationFile, updated); err != nil {
+	applied, err := st.applySessionDeltas(s.sessionID, func(current []observation) []observation {
+		return applyDeltas(current, result, s)
+	})
+	if err != nil {
 		return fmt.Errorf("writing observations: %w", err)
 	}
-	markProcessed(p, state, s.sessionID, false)
+	if applied {
+		state.markProcessed(s.sessionID)
+	} else {
+		fmt.Println("  session was already processed by another distill process — skipping write")
+	}
 	fmt.Println()
 	return nil
 }
@@ -221,12 +229,12 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 // so the server (and the next `--new` invocation) sees progress mid-batch.
 // In dry-run mode, the in-memory state still gets updated for the rest of
 // the batch but is never persisted.
-func markProcessed(p paths, state *stateFile, sessionID string, dryRun bool) {
-	state.ProcessedSessions[sessionID] = time.Now().UTC().Format(time.RFC3339)
+func markProcessed(st store, state *stateFile, sessionID string, dryRun bool) {
+	state.markProcessed(sessionID)
 	if dryRun {
 		return
 	}
-	if err := writeState(p.stateFile, state); err != nil {
+	if err := st.markProcessed(sessionID); err != nil {
 		fmt.Fprintf(os.Stderr, "  warn: state flush failed: %v\n", err)
 	}
 }
@@ -483,7 +491,7 @@ func readState(path string) (*stateFile, error) {
 
 	var s stateFile
 	if err := json.NewDecoder(f).Decode(&s); err != nil {
-		return &stateFile{ProcessedSessions: map[string]string{}}, nil
+		return nil, fmt.Errorf("parsing state file: %w", err)
 	}
 	if s.ProcessedSessions == nil {
 		s.ProcessedSessions = map[string]string{}
@@ -492,11 +500,15 @@ func readState(path string) (*stateFile, error) {
 }
 
 func writeState(path string, s *stateFile) error {
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(s); err != nil {
@@ -507,6 +519,13 @@ func writeState(path string, s *stateFile) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func (s *stateFile) markProcessed(sessionID string) {
+	if s.ProcessedSessions == nil {
+		s.ProcessedSessions = map[string]string{}
+	}
+	s.ProcessedSessions[sessionID] = time.Now().UTC().Format(time.RFC3339)
 }
 
 func contains(xs []string, x string) bool {
