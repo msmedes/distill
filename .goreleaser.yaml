@@ -8,7 +8,7 @@ before:
 
 builds:
   - id: distill
-    main: .
+    main: ./cmd/distill
     binary: distill
     env:
       - CGO_ENABLED=0

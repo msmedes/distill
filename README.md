@@ -26,7 +26,7 @@ Requires Go 1.24+.
 ```sh
 git clone https://github.com/msmedes/distill.git
 cd distill
-go build -o distill .
+go build -o distill ./cmd/distill
 ```
 
 A single static binary lands at `./distill`. No runtime dependencies beyond `claude`.
@@ -164,7 +164,7 @@ Re-running `install` is idempotent: if the hook is already wired to the same bin
 The hook stores the **absolute path** of whichever binary you ran `install` from — typically your in-repo `./distill`. So the dev loop is:
 
 1. Run `./distill install` once from your checkout.
-2. Iterate on source. Each `go build -o distill .` overwrites the binary at the same path.
+2. Iterate on source. Each `go build -o distill ./cmd/distill` overwrites the binary at the same path.
 3. The next session-end fires the hook → uses your freshly built code.
 
 You only need to reinstall if you move the binary or rename the `hook` subcommand. `air` (see `.air.toml`) gives you save-to-rebuild for a tight loop.

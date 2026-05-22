@@ -1,4 +1,4 @@
-package main
+package distill
 
 import (
 	"bufio"
@@ -58,10 +58,10 @@ const (
 // Status values: an observation is "active" by default and exits that state
 // via user action (ignore, or promote to CLAUDE.md / a skill).
 const (
-	statusActive            = "active"
-	statusIgnored           = "ignored"
-	statusPromotedClaudeMD  = "promoted-claude-md"
-	statusPromotedToSkill   = "promoted-skill"
+	statusActive           = "active"
+	statusIgnored          = "ignored"
+	statusPromotedClaudeMD = "promoted-claude-md"
+	statusPromotedToSkill  = "promoted-skill"
 )
 
 type observation struct {

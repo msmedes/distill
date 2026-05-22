@@ -3,10 +3,10 @@ tmp_dir = "tmp"
 
 [build]
   bin = "./tmp/distill"
-  cmd = "go build -o ./tmp/distill ."
+  cmd = "go build -o ./tmp/distill ./cmd/distill"
   args_bin = ["serve"]
   include_ext = ["go", "html"]
-  exclude_dir = ["tmp", "dist", "_meta", ".git", "prompts"]
+  exclude_dir = ["tmp", "dist", "_meta", ".git"]
   delay = 200
   kill_delay = "0s"
   stop_on_error = true

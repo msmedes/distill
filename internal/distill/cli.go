@@ -1,4 +1,4 @@
-package main
+package distill
 
 import (
 	"embed"
@@ -31,53 +31,54 @@ Examples:
   distill install                    # auto-extract whenever a Claude Code session ends
 `
 
-func main() {
-	if len(os.Args) < 2 {
+func Main(args []string) int {
+	if len(args) < 2 {
 		fmt.Print(usage)
-		return
+		return 0
 	}
 
-	switch os.Args[1] {
+	switch args[1] {
 	case "extract":
-		if err := runExtract(os.Args[2:]); err != nil {
+		if err := runExtract(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "extract: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "list":
-		if err := runList(os.Args[2:]); err != nil {
+		if err := runList(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "list: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "serve":
-		if err := runServe(os.Args[2:]); err != nil {
+		if err := runServe(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "compact":
-		if err := runCompact(os.Args[2:]); err != nil {
+		if err := runCompact(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "compact: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "synthesize":
-		if err := runSynthesize(os.Args[2:]); err != nil {
+		if err := runSynthesize(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "synthesize: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "install":
-		if err := runInstall(os.Args[2:]); err != nil {
+		if err := runInstall(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "install: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "hook":
-		if err := runHook(os.Args[2:]); err != nil {
+		if err := runHook(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "hook: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", args[1])
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

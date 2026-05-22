@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package distill
 
 import (
 	"os/exec"

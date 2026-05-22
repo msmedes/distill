@@ -1,4 +1,4 @@
-distill
+/distill
 dist/
 .DS_Store
 tmp/

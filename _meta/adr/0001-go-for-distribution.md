@@ -14,7 +14,7 @@ distill is written in Go, standard library only where possible. `go build` produ
 ## Consequences
 
 - **+** Zero runtime dependencies. The binary ships as one file.
-- **+** Cross-compilation is trivial (`GOOS=darwin GOARCH=arm64 go build`).
+- **+** Cross-compilation is trivial (`GOOS=darwin GOARCH=arm64 go build ./cmd/distill`).
 - **+** Idiomatic concurrency (goroutines for the HTTP server, mutex for the store) is cheap and well-supported.
 - **−** Type sharing with Cairn (TypeScript) is now structural, not nominal. Schemas duplicated on both sides.
 - **−** JSON marshaling is more verbose than Zod. Acceptable for the size of this project.
