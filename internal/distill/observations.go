@@ -32,6 +32,7 @@ func validType(t observationType) bool {
 
 type evidence struct {
 	SessionID  string   `json:"session_id"`
+	Product    product  `json:"product,omitempty"`
 	TurnRefs   []string `json:"turn_refs"`
 	Quote      string   `json:"quote,omitempty"`
 	RecordedAt string   `json:"recorded_at"`
@@ -57,7 +58,7 @@ const (
 )
 
 // Status values: an observation is "active" by default and exits that state
-// via user action (ignore, or promote to CLAUDE.md / a skill).
+// via user action (ignore, or promote to always-on instructions / a skill).
 const (
 	statusActive           = "active"
 	statusIgnored          = "ignored"
@@ -149,6 +150,11 @@ func normalizeObservation(o *observation) {
 	}
 	if o.Evidence == nil {
 		o.Evidence = []evidence{}
+	}
+	for i := range o.Evidence {
+		if o.Evidence[i].Product == "" {
+			o.Evidence[i].Product = productClaude
+		}
 	}
 	if o.Notes == nil {
 		o.Notes = []note{}

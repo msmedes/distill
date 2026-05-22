@@ -1,8 +1,8 @@
 # distill
 
-distill is a Go CLI that turns Claude Code session transcripts into a curated model of the developer — what they prefer, how they work, what they push back on — and lets them promote those signals into Claude Code skills or CLAUDE.md entries via a local web UI.
+distill is a Go CLI that turns Claude Code and Codex session transcripts into a curated model of the developer — what they prefer, how they work, what they push back on — and lets them promote those signals into skills or always-on instruction entries via a local web UI.
 
-The data flow is: **Session → Extract → Observation → (Synthesize → Proposal →) Promotion → Skill | CLAUDE.md**
+The data flow is: **Session → Extract → Observation → (Synthesize → Proposal →) Promotion → Skill | Always-on instructions**
 
 For ADRs covering the load-bearing decisions, see [`_meta/adr/`](./_meta/adr).
 
@@ -13,19 +13,23 @@ The atomic unit. A claim about the user — a preference, workflow, friction poi
 _Avoid_: skill (a skill is a promoted observation, not the observation itself), pattern, insight.
 
 **Evidence**:
-A quote from a specific session turn that supports an observation. Multiple evidence entries accumulate as the same observation is reinforced across sessions.
+A quote from a specific session turn that supports an observation. Multiple evidence entries accumulate as the same observation is reinforced across sessions. Evidence records carry their source product (`claude` or `codex`) so the UI can show where the signal came from.
 _Avoid_: example, citation.
 
 **Session**:
-One Claude Code conversation, stored as JSONL at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. distill reads these; it never modifies them.
+One coding-agent conversation. Claude Code sessions are stored as JSONL at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`; Codex sessions are stored as rollout JSONL under `~/.codex/sessions/<yyyy>/<mm>/<dd>/`. distill reads these; it never modifies them.
 _Avoid_: transcript (the rendered text inside a session), chat, thread.
 
 **Extract**:
 The per-session pass. Reads one session's transcript and emits observation deltas: new candidates, reinforcements of existing observations, or contradictions. Cheap (Haiku), runs once per session.
 _Avoid_: parse, ingest, ingest.
 
+**Watch**:
+The automatic ingestion loop. Polls Claude Code and Codex transcript directories, ignores recently modified files, and runs Extract for quiet unprocessed sessions. This is the canonical automation model; distill does not install product-specific session hooks.
+_Avoid_: hook, daemon (unless discussing process supervision).
+
 **Synthesize**:
-The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to skills or CLAUDE.md. Expensive (Sonnet), runs only when the user asks.
+The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to skills or always-on instructions. Expensive (Sonnet), runs only when the user asks.
 _Avoid_: review, audit.
 
 **Proposal**:
@@ -33,15 +37,15 @@ An LLM-attached suggestion on an observation that recommends promotion to a spec
 _Avoid_: recommendation, suggestion (these are too general).
 
 **Promotion**:
-The act of moving an observation's content into a target file — a new `SKILL.md` or an appended block in `CLAUDE.md`. Always user-confirmed; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md).
+The act of moving an observation's content into a target file — a new `SKILL.md` or an appended block in the configured always-on instructions file. Always user-confirmed; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md).
 _Avoid_: graduation, conversion.
 
 **Skill**:
-A Claude Code skill file at `~/.claude/skills/<name>/SKILL.md` — frontmatter (`name`, `description`) plus a markdown body. Loaded into agent context when its description matches the task. Situational rules.
-_Avoid_: rule (CLAUDE.md entries are more rule-shaped; skills are situational).
+A skill file at the configured skills directory, default `~/.agents/skills/<name>/SKILL.md` — frontmatter (`name`, `description`) plus a markdown body. Loaded into agent context when its description matches the task. Situational rules.
+_Avoid_: rule (always-on entries are more rule-shaped; skills are situational).
 
-**CLAUDE.md**:
-The user's always-on agent instructions, located at `~/.claude/CLAUDE.md` (the file or symlink target). distill appends promoted observations under an `## Auto-extracted from distill` section. Stable, always-on preferences.
+**Always-on instructions**:
+The user's persistent agent instruction file. distill defaults to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). distill appends promoted observations under an `## Auto-extracted from distill` section. Stable, always-on preferences.
 _Avoid_: settings, config, profile.
 
 **Status**:
@@ -56,7 +60,7 @@ When a new session shows the user doing the opposite of what an observation pred
 _Avoid_: refutation, rebuttal.
 
 **State**:
-The persistent store at `~/.distill/`. Contains `observations.jsonl` (all observations), `state.json` (which sessions have been processed and when), and `candidates/` (reserved for future use).
+The persistent store at `~/.distill/`. Contains `observations.jsonl` (all observations), `state.json` (which sessions have been processed and when), `preferences.json` (promotion destinations), and `candidates/` (reserved for future use).
 
 **Compact**:
 A maintenance command that dedups evidence entries within each observation by quote text and resets `evidence_count` to reflect actual independent reinforcements. Idempotent. See [ADR 0005](./_meta/adr/0005-evidence-dedup-by-quote.md).
@@ -64,17 +68,18 @@ A maintenance command that dedups evidence entries within each observation by qu
 ## Relationships
 
 - A **Session** contains turns; **Extract** consumes a session and produces **Observation** deltas (new / reinforced / contradicted).
+- **Watch** discovers quiet unprocessed Sessions and invokes Extract; it does not synthesize or promote anything.
 - An **Observation** has many **Evidence** entries; duplicate quotes are deduplicated at write time because Claude Code creates a fresh session file on every `/resume`, copying earlier turns verbatim.
 - An **Observation** also has a **Status**, an optional list of **Notes**, and an optional list of **Proposals**.
 - **Synthesize** reads all `active` observations and attaches **Proposals** to a subset; it does not modify any other field.
-- Accepting a **Proposal** performs a **Promotion** to a **Skill** (LLM-generated `SKILL.md` informed by claim + evidence + notes) or to **CLAUDE.md** (a single-line bullet append, no LLM rewrite).
+- Accepting a **Proposal** performs a **Promotion** to a **Skill** (LLM-generated `SKILL.md` informed by claim + evidence + notes) or to always-on instructions (a single-line bullet append, no LLM rewrite).
 - After promotion, the observation's status changes; it stays in the store with a `promoted_to` path but disappears from the default view.
 - Ignoring an observation sets `status = ignored`; it is hidden in the default view but can be unignored later.
 
 ## Example dialogue
 
-> **Dev:** "I see `obs_0003` has `count=7` and a CLAUDE.md proposal. What does count mean here?"
-> **Domain expert:** "Seven distinct pieces of Evidence — quotes from across sessions — back that Observation. The Proposal is saying it's stable enough to belong in CLAUDE.md rather than a situational Skill."
+> **Dev:** "I see `obs_0003` has `count=7` and an always-on proposal. What does count mean here?"
+> **Domain expert:** "Seven distinct pieces of Evidence — quotes from across sessions — back that Observation. The Proposal is saying it's stable enough to belong in always-on instructions rather than a situational Skill."
 >
 > **Dev:** "Why isn't it auto-promoted then?"
 > **Domain expert:** "Promotion is always user-confirmed. Synthesize proposes; the user accepts or dismisses. The cost of a bad skill polluting every future agent context is too high to automate."

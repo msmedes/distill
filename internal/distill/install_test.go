@@ -1,46 +1,67 @@
 package distill
 
 import (
-	"os"
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestRunHookSkipsInternalDistillSessions(t *testing.T) {
+func TestPromptInstallPreferencesDefaultsToWatchingBothAndUnified(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("DISTILL_INTERNAL", "1")
-
-	stdin := os.Stdin
-	t.Cleanup(func() {
-		os.Stdin = stdin
-	})
-
-	payload := `{"session_id":"internal-session","hook_event_name":"SessionEnd"}`
-	f, err := os.CreateTemp(t.TempDir(), "hook-payload-*.json")
+	defaults, err := defaultPreferences()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	if _, err := f.WriteString(payload); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		t.Fatal(err)
-	}
-	os.Stdin = f
+	var out bytes.Buffer
 
-	if err := runHook(nil); err != nil {
-		t.Fatalf("runHook returned error: %v", err)
-	}
-
-	logBytes, err := os.ReadFile(filepath.Join(home, ".distill", "hook.log"))
+	prefs, err := promptInstallPreferences(strings.NewReader("\n\n\n"), &out, defaults)
 	if err != nil {
-		t.Fatalf("expected hook log: %v", err)
+		t.Fatal(err)
 	}
-	log := string(logBytes)
-	if !strings.Contains(log, "skipping internal distill claude session internal-session") {
-		t.Fatalf("expected internal-session skip log, got %q", log)
+
+	if !prefs.WatchClaude || !prefs.WatchCodex {
+		t.Fatalf("expected both products watched, got %#v", prefs)
+	}
+	if prefs.PromotionMode != promotionModeUnified {
+		t.Fatalf("expected unified promotion mode, got %s", prefs.PromotionMode)
+	}
+	if prefs.AlwaysOnPath != filepath.Join(home, ".agents", "AGENTS.md") {
+		t.Fatalf("unexpected always-on path: %s", prefs.AlwaysOnPath)
+	}
+	if !strings.Contains(out.String(), "Watch Claude Code? [Y/n]") {
+		t.Fatalf("expected Claude prompt, got %q", out.String())
+	}
+}
+
+func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	defaults, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+
+	prefs, err := promptInstallPreferences(strings.NewReader("y\ny\nn\n"), &out, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if prefs.PromotionMode != promotionModeSeparate {
+		t.Fatalf("expected separate promotion mode, got %s", prefs.PromotionMode)
+	}
+}
+
+func TestPromptInstallPreferencesRequiresAWatchedProduct(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	defaults, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+
+	if _, err := promptInstallPreferences(strings.NewReader("n\nn\n"), &out, defaults); err == nil {
+		t.Fatal("expected no watched products to fail")
 	}
 }

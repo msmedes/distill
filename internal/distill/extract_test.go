@@ -1,6 +1,12 @@
 package distill
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestShouldSkipExtractionRequiresEnoughUserSignal(t *testing.T) {
 	opts := extractOpts{minUserTurns: 2, minUserChars: 200}
@@ -55,5 +61,56 @@ func TestRelevantObservationsUsesQueryOverlap(t *testing.T) {
 	got := relevantObservations(obs, "please use browser screenshots to verify the frontend", 1)
 	if len(got) != 1 || got[0].ID != "obs_2" {
 		t.Fatalf("expected obs_2, got %#v", got)
+	}
+}
+
+func TestParseCodexTranscriptUsesUserAndAssistantMessages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "codex.jsonl")
+	body := strings.Join([]string{
+		`{"type":"session_meta","payload":{"id":"session-1","cwd":"/tmp/project"}}`,
+		`{"timestamp":"2026-05-22T20:40:00Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"ignore"}]}}`,
+		`{"timestamp":"2026-05-22T20:41:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"do the thing"}]}}`,
+		`{"timestamp":"2026-05-22T20:42:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}`,
+	}, "\n")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	turns, err := parseCodexTranscript(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 2 {
+		t.Fatalf("expected 2 user/assistant turns, got %#v", turns)
+	}
+	if turns[0].role != "user" || turns[0].text != "do the thing" {
+		t.Fatalf("unexpected first turn: %#v", turns[0])
+	}
+	if turns[1].role != "assistant" || turns[1].text != "done" {
+		t.Fatalf("unexpected second turn: %#v", turns[1])
+	}
+}
+
+func TestProcessedSessionKeepsLegacyClaudeStateCompatible(t *testing.T) {
+	state := &stateFile{ProcessedSessions: map[string]string{"legacy-session": "2026-05-22T20:00:00Z"}}
+
+	if !processedSession(state, sessionMeta{product: productClaude, sessionID: "legacy-session"}) {
+		t.Fatal("expected legacy Claude session key to remain processed")
+	}
+	if processedSession(state, sessionMeta{product: productCodex, sessionID: "legacy-session"}) {
+		t.Fatal("did not expect legacy key to mark Codex session processed")
+	}
+}
+
+func TestQuietSessionsFiltersRecentlyModifiedTranscripts(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	sessions := []sessionMeta{
+		{sessionID: "old", mtime: now.Add(-2 * time.Hour)},
+		{sessionID: "recent", mtime: now.Add(-5 * time.Minute)},
+	}
+
+	got := quietSessions(sessions, 10*time.Minute, now)
+	if len(got) != 1 || got[0].sessionID != "old" {
+		t.Fatalf("expected only old session, got %#v", got)
 	}
 }

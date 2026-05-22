@@ -1,6 +1,6 @@
 # Observation extraction
 
-You are reading user-authored turns from a single coding session between a developer and Claude Code. Some high-signal user turns include a bounded preceding assistant turn as local context. Your job is to extract **observations** about the developer — claims about their preferences, workflows, friction points, or tool-use patterns — that would help future agents work with them better.
+You are reading user-authored turns from a single coding-agent session between a developer and Claude Code or Codex. Some high-signal user turns include a bounded preceding assistant turn as local context. Your job is to extract **observations** about the developer — claims about their preferences, workflows, friction points, or tool-use patterns — that would help future agents work with them better.
 
 ## What you are looking for
 
@@ -18,7 +18,7 @@ You are reading user-authored turns from a single coding session between a devel
 ## What to suppress (do not emit observations about these)
 
 - **Task-specific content.** "User is working on a Tauri IPC bug" is not an observation; it's project context.
-- **Things already in CLAUDE.md.** If the user has already stated a preference there, don't re-extract it.
+- **Things already in always-on instructions.** If the user has already stated a preference there, don't re-extract it.
 - **Generic-to-all-users claims.** "User wants working code" — useless. The observation must differentiate this user from a generic user.
 - **Single weak inferences.** If the only evidence is "they did X once and didn't object," that's not enough. Let it sit until it reinforces.
 
@@ -71,6 +71,7 @@ Output a single JSON object. **Default toward emitting nothing.** Most sessions 
 ## User-message excerpt
 
 Session ID: `{{SESSION_ID}}`
+Product: `{{SESSION_PRODUCT}}`
 Project cwd: `{{SESSION_CWD}}`
 
 ```

@@ -7,9 +7,11 @@ import (
 
 type paths struct {
 	claudeProjects  string
+	codexSessions   string
 	stateDir        string
 	observationFile string
 	stateFile       string
+	preferencesFile string
 	candidatesDir   string
 }
 
@@ -21,9 +23,11 @@ func resolvePaths() (paths, error) {
 	stateDir := filepath.Join(home, ".distill")
 	return paths{
 		claudeProjects:  filepath.Join(home, ".claude", "projects"),
+		codexSessions:   filepath.Join(home, ".codex", "sessions"),
 		stateDir:        stateDir,
 		observationFile: filepath.Join(stateDir, "observations.jsonl"),
 		stateFile:       filepath.Join(stateDir, "state.json"),
+		preferencesFile: filepath.Join(stateDir, "preferences.json"),
 		candidatesDir:   filepath.Join(stateDir, "candidates"),
 	}, nil
 }

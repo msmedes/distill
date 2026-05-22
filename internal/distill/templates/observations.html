@@ -63,6 +63,71 @@
       align-items: center;
     }
     .filter-spacer { flex: 1; }
+    .settings {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      margin: -12px 0 20px;
+    }
+    .settings > summary {
+      cursor: pointer;
+      list-style: none;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+      padding: 9px 12px;
+      user-select: none;
+    }
+    .settings > summary::-webkit-details-marker { display: none; }
+    .settings > summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 12px;
+      transition: transform 0.1s;
+    }
+    .settings[open] > summary::before { transform: rotate(90deg); }
+    .settings-form {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 0 12px 12px;
+    }
+    .settings-form label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--fg-faint);
+      text-transform: lowercase;
+    }
+    .settings-form input {
+      font-family: var(--mono);
+      font-size: 11px;
+      min-width: 0;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--fg);
+      outline: none;
+    }
+    .settings-form input:focus { border-color: var(--fg-soft); }
+    .settings-form button {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg-soft);
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: lowercase;
+    }
+    .settings-form button:hover {
+      color: var(--fg);
+      border-color: var(--fg-soft);
+    }
     .propose-btn {
       font-family: var(--mono);
       font-size: 11px;
@@ -149,6 +214,15 @@
       background: var(--bg);
     }
     .count { font-variant-numeric: tabular-nums; }
+    .product {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--bg-card-muted);
+      color: var(--fg-soft);
+      text-transform: lowercase;
+    }
     .contradicted { color: var(--accent); }
     .status-badge {
       margin-left: auto;
@@ -209,6 +283,15 @@
       font-variant-numeric: tabular-nums;
     }
     .ev-meta .session { color: var(--fg-soft); }
+    .ev-meta .source {
+      display: inline-block;
+      padding: 0 4px;
+      border: 1px solid var(--border-soft);
+      border-radius: 3px;
+      background: var(--bg);
+      color: var(--fg-soft);
+      text-transform: lowercase;
+    }
     .quote, .note-text {
       display: block;
       padding: 4px 0 4px 8px;
@@ -438,6 +521,16 @@
       border-radius: 3px;
       border: 1px solid var(--border);
     }
+    @media (max-width: 560px) {
+      .settings-form {
+        grid-template-columns: 1fr;
+      }
+      .settings-form button {
+        grid-column: 1;
+        grid-row: auto;
+        justify-self: start;
+      }
+    }
   </style>
 </head>
 <body>
@@ -459,13 +552,24 @@
       {{end}}
       <div class="filter-spacer"></div>
       <form method="POST" action="/synthesize" data-busy-text="synthesizing…">
-        <button class="propose-btn" title="ask the model to propose promotions to skills / CLAUDE.md">
+        <button class="propose-btn" title="ask the model to propose promotions to skills / always-on instructions">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/><path d="m12 7 1.5 4.5L18 13l-4.5 1.5L12 19l-1.5-4.5L6 13l4.5-1.5z"/></svg>
           propose promotions
         </button>
       </form>
     </div>
   {{end}}
+
+  <details class="settings">
+    <summary>promotion destinations</summary>
+    <form class="settings-form" method="POST" action="/settings">
+      <label for="always-on-path">always-on</label>
+      <input id="always-on-path" name="always_on_path" value="{{.Preferences.AlwaysOnPath}}" autocomplete="off">
+      <label for="skills-dir">skills dir</label>
+      <input id="skills-dir" name="skills_dir" value="{{.Preferences.SkillsDir}}" autocomplete="off">
+      <button>save</button>
+    </form>
+  </details>
 
   {{if .Observations}}
     {{range .Observations}}
@@ -475,9 +579,10 @@
         <span class="obs-id">{{.ID}}</span>
         <span class="type">{{.Type}}</span>
         <span class="count">count={{.EvidenceCount}}</span>
+        {{range productsFor .Evidence}}<span class="product">{{.}}</span>{{end}}
         {{if .ContradictedBy}}<span class="contradicted">contradicted×{{len .ContradictedBy}}</span>{{end}}
         {{if eq .Status "ignored"}}<span class="status-badge">ignored</span>{{end}}
-        {{if eq .Status "promoted-claude-md"}}<span class="status-badge promoted">→ CLAUDE.md</span>{{end}}
+        {{if eq .Status "promoted-claude-md"}}<span class="status-badge promoted">→ always-on</span>{{end}}
         {{if eq .Status "promoted-skill"}}<span class="status-badge promoted">→ skill</span>{{end}}
       </header>
 
@@ -489,7 +594,7 @@
         <div class="proposal">
           <details class="proposal-reveal">
             <summary>
-              <span class="proposal-label">{{if eq .Kind "skill"}}skill proposal{{else}}CLAUDE.md proposal{{end}}</span>
+              <span class="proposal-label">{{if eq .Kind "skill"}}skill proposal{{else}}always-on proposal{{end}}</span>
             </summary>
             <div class="proposal-body">{{.Reasoning}}</div>
           </details>
@@ -526,7 +631,7 @@
                 <button>save</button>
               </form>
               <form method="POST" action="/obs/{{.ID}}/ignore"><button class="danger">ignore</button></form>
-              <form method="POST" action="/obs/{{.ID}}/promote-claude-md"><button class="promote">→ CLAUDE.md</button></form>
+              <form method="POST" action="/obs/{{.ID}}/promote-claude-md"><button class="promote">→ always-on</button></form>
               <form method="POST" action="/obs/{{.ID}}/promote-skill" data-busy-text="extracting…"><button class="promote">→ skill</button></form>
             </div>
           </details>
@@ -581,6 +686,8 @@
     {{range .Evidence}}
     <li>
       <div class="ev-meta">
+        <span class="source">{{.Product}}</span>
+        <span>·</span>
         <span class="session">{{shortID .SessionID}}</span>
         {{if .TurnRefs}}<span>· {{join .TurnRefs ", "}}</span>{{end}}
         {{if .RecordedAt}}<span>· {{shortTime .RecordedAt}}</span>{{end}}

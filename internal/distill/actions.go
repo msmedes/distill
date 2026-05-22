@@ -109,65 +109,95 @@ func addNote(p paths, id, text string) (actionResult, error) {
 }
 
 func promoteToClaudeMD(p paths, id string) (actionResult, error) {
-	claudePath, err := claudeMDPath()
+	prefs, err := readPreferences(p)
 	if err != nil {
 		return actionResult{}, err
 	}
+	alwaysOnPath := prefs.alwaysOnDestination(observation{})
 
 	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
 		i, ok := findObservation(obs, id)
 		if !ok {
 			return nil, fmt.Errorf("observation %s not found", id)
 		}
-		if obs[i].Status == statusPromotedClaudeMD && obs[i].PromotedTo == claudePath {
+		alwaysOnPath = prefs.alwaysOnDestination(obs[i])
+		if obs[i].Status == statusPromotedClaudeMD && obs[i].PromotedTo == alwaysOnPath {
 			obs[i].Proposals = []proposal{}
 			return obs, nil
 		}
-		if err := appendToClaudeMD(claudePath, obs[i]); err != nil {
+		if err := appendToClaudeMD(alwaysOnPath, obs[i]); err != nil {
 			return nil, err
 		}
 		obs[i].Status = statusPromotedClaudeMD
-		obs[i].PromotedTo = claudePath
+		obs[i].PromotedTo = alwaysOnPath
 		obs[i].Proposals = []proposal{}
 		return obs, nil
 	}); err != nil {
 		return actionResult{}, err
 	}
-	return actionResult{OK: true, Message: "added to CLAUDE.md", PromotedTo: claudePath}, nil
+	return actionResult{OK: true, Message: "added to always-on instructions", PromotedTo: alwaysOnPath}, nil
 }
 
 func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, error) {
 	st := newStore(p)
+	var result actionResult
+	err := st.withNamedLock("promote-skill-"+id, func() error {
+		o, err := promotableObservation(st, id)
+		if err != nil {
+			return err
+		}
+		if o.Status == statusPromotedToSkill && o.PromotedTo != "" {
+			result = actionResult{OK: true, Message: "skill extracted", PromotedTo: o.PromotedTo}
+			return nil
+		}
+
+		gen, err := generateSkill(ctx, o)
+		if err != nil {
+			return fmt.Errorf("generating skill: %w", err)
+		}
+
+		prefs, err := readPreferences(p)
+		if err != nil {
+			return err
+		}
+		skillPath, err := writeSkillFile(prefs.SkillsDir, gen)
+		if err != nil {
+			return fmt.Errorf("writing skill: %w", err)
+		}
+
+		if err := finalizeSkillPromotion(st, id, skillPath); err != nil {
+			_ = os.Remove(skillPath)
+			return err
+		}
+		result = actionResult{OK: true, Message: "skill extracted", PromotedTo: skillPath}
+		return nil
+	})
+	return result, err
+}
+
+func promotableObservation(st store, id string) (observation, error) {
 	obs, err := st.readObservations()
 	if err != nil {
-		return actionResult{}, err
+		return observation{}, err
 	}
 	i, ok := findObservation(obs, id)
 	if !ok {
-		return actionResult{}, fmt.Errorf("observation %s not found", id)
+		return observation{}, fmt.Errorf("observation %s not found", id)
 	}
-	o := obs[i]
-	if o.Status == statusPromotedToSkill && o.PromotedTo != "" {
-		return actionResult{OK: true, Message: "skill extracted", PromotedTo: o.PromotedTo}, nil
+	if obs[i].Status == statusPromotedToSkill && obs[i].PromotedTo != "" {
+		return obs[i], nil
 	}
+	if obs[i].Status != statusActive {
+		return observation{}, fmt.Errorf("observation %s is no longer active", id)
+	}
+	return obs[i], nil
+}
 
-	gen, err := generateSkill(ctx, o)
-	if err != nil {
-		return actionResult{}, fmt.Errorf("generating skill: %w", err)
-	}
-
-	skillPath, err := writeSkillFile(gen)
-	if err != nil {
-		return actionResult{}, fmt.Errorf("writing skill: %w", err)
-	}
-
-	if err := st.updateObservations(func(obs []observation) ([]observation, error) {
+func finalizeSkillPromotion(st store, id, skillPath string) error {
+	return st.updateObservations(func(obs []observation) ([]observation, error) {
 		i, ok := findObservation(obs, id)
 		if !ok {
 			return nil, fmt.Errorf("observation %s not found", id)
-		}
-		if obs[i].Status == statusPromotedToSkill && obs[i].PromotedTo != "" {
-			return nil, fmt.Errorf("observation %s was already promoted to %s", id, obs[i].PromotedTo)
 		}
 		if obs[i].Status != statusActive {
 			return nil, fmt.Errorf("observation %s is no longer active", id)
@@ -176,25 +206,13 @@ func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, erro
 		obs[i].PromotedTo = skillPath
 		obs[i].Proposals = []proposal{}
 		return obs, nil
-	}); err != nil {
-		_ = os.Remove(skillPath)
-		return actionResult{}, err
-	}
-	return actionResult{OK: true, Message: "skill extracted", PromotedTo: skillPath}, nil
-}
-
-func claudeMDPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".claude", "CLAUDE.md"), nil
+	})
 }
 
 func appendToClaudeMD(path string, o observation) error {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading CLAUDE.md (%s): %w", path, err)
+		return fmt.Errorf("reading always-on instructions (%s): %w", path, err)
 	}
 	src := string(body)
 	header := claudeMDSectionHeader
@@ -317,12 +335,8 @@ func buildSkillPrompt(o observation) (string, error) {
 	return out, nil
 }
 
-func writeSkillFile(g generatedSkill) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(home, ".claude", "skills", g.Name)
+func writeSkillFile(skillsDir string, g generatedSkill) (string, error) {
+	dir := filepath.Join(skillsDir, g.Name)
 	skillPath := filepath.Join(dir, "SKILL.md")
 	if _, err := os.Stat(skillPath); err == nil {
 		return "", fmt.Errorf("skill %q already exists at %s — rename or delete first", g.Name, skillPath)

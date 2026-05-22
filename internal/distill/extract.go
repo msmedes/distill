@@ -14,6 +14,7 @@ import (
 
 type extractOpts struct {
 	sessionID         string
+	product           product
 	recent            int
 	onlyNew           bool
 	dryRun            bool
@@ -59,24 +60,30 @@ type extractedContradict struct {
 func runExtract(args []string) error {
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
 	var (
-		sessionID = fs.String("session", "", "process a specific session by id (prefix ok)")
-		recent    = fs.Int("recent", 1, "number of most-recent sessions to process")
-		onlyNew   = fs.Bool("new", false, "process all unprocessed sessions (overrides --recent)")
-		dryRun    = fs.Bool("dry-run", false, "show what would be extracted, don't write")
-		model     = fs.String("model", "haiku", "model to use: haiku | sonnet")
-		maxChars  = fs.Int("max-transcript-chars", 60_000, "truncate rendered user-message excerpts longer than this")
-		minTurns  = fs.Int("min-user-turns", 2, "skip sessions with fewer user turns unless high-signal language appears")
-		minChars  = fs.Int("min-user-chars", 200, "skip sessions with fewer user-message chars unless high-signal language appears")
-		maxObs    = fs.Int("max-observations", 80, "maximum relevant existing observations to include in extractor prompt")
-		zoomChars = fs.Int("zoom-context-chars", 2500, "max chars from the preceding assistant turn to include around high-signal user turns")
-		noSkip    = fs.Bool("no-skip", false, "disable cheap local skipping for short low-signal sessions")
+		sessionID   = fs.String("session", "", "process a specific session by id (prefix ok)")
+		productName = fs.String("product", "all", "sessions to process: claude | codex | all")
+		recent      = fs.Int("recent", 1, "number of most-recent sessions to process")
+		onlyNew     = fs.Bool("new", false, "process all unprocessed sessions (overrides --recent)")
+		dryRun      = fs.Bool("dry-run", false, "show what would be extracted, don't write")
+		model       = fs.String("model", "haiku", "model to use: haiku | sonnet")
+		maxChars    = fs.Int("max-transcript-chars", 60_000, "truncate rendered user-message excerpts longer than this")
+		minTurns    = fs.Int("min-user-turns", 2, "skip sessions with fewer user turns unless high-signal language appears")
+		minChars    = fs.Int("min-user-chars", 200, "skip sessions with fewer user-message chars unless high-signal language appears")
+		maxObs      = fs.Int("max-observations", 80, "maximum relevant existing observations to include in extractor prompt")
+		zoomChars   = fs.Int("zoom-context-chars", 2500, "max chars from the preceding assistant turn to include around high-signal user turns")
+		noSkip      = fs.Bool("no-skip", false, "disable cheap local skipping for short low-signal sessions")
 	)
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	targetProduct, err := parseProduct(*productName)
+	if err != nil {
 		return err
 	}
 
 	opts := extractOpts{
 		sessionID:         *sessionID,
+		product:           targetProduct,
 		recent:            *recent,
 		onlyNew:           *onlyNew,
 		dryRun:            *dryRun,
@@ -89,6 +96,10 @@ func runExtract(args []string) error {
 		noSkip:            *noSkip,
 	}
 
+	return runExtractOnce(opts, 0)
+}
+
+func runExtractOnce(opts extractOpts, quietFor time.Duration) error {
 	p, err := resolvePaths()
 	if err != nil {
 		return err
@@ -103,9 +114,12 @@ func runExtract(args []string) error {
 		return err
 	}
 
-	all, err := listSessions(p.claudeProjects)
+	all, err := listSessions(p, opts.product)
 	if err != nil {
 		return err
+	}
+	if quietFor > 0 {
+		all = quietSessions(all, quietFor, time.Now())
 	}
 
 	if _, err := resolveModel(opts.model); err != nil {
@@ -130,20 +144,32 @@ func runExtract(args []string) error {
 	return nil
 }
 
+func quietSessions(sessions []sessionMeta, quietFor time.Duration, now time.Time) []sessionMeta {
+	cutoff := now.Add(-quietFor)
+	var out []sessionMeta
+	for _, s := range sessions {
+		if s.mtime.After(cutoff) {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) error {
 	cwdLabel := s.cwd
 	if cwdLabel == "" {
 		cwdLabel = "?"
 	}
-	fmt.Printf("── %s (%s)\n", s.sessionID[:8], cwdLabel)
+	fmt.Printf("── %s:%s (%s)\n", s.product, shortID(s.sessionID), cwdLabel)
 
-	turns, err := parseTranscript(s.filePath)
+	turns, err := parseSessionTranscript(s)
 	if err != nil {
 		return fmt.Errorf("parsing transcript: %w", err)
 	}
 	if len(turns) == 0 {
 		fmt.Println("  (no user/assistant turns — skipping)")
-		markProcessed(st, state, s.sessionID, opts.dryRun)
+		markProcessed(st, state, s, opts.dryRun)
 		fmt.Println()
 		return nil
 	}
@@ -152,7 +178,7 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 	if !opts.noSkip && shouldSkipExtraction(signal, opts) {
 		fmt.Printf("  low-signal session: %d user turn(s), %d user chars, no correction/preference markers — skipping claude call\n",
 			signal.userTurns, signal.userChars)
-		markProcessed(st, state, s.sessionID, opts.dryRun)
+		markProcessed(st, state, s, opts.dryRun)
 		fmt.Println()
 		return nil
 	}
@@ -210,14 +236,14 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 		return nil
 	}
 
-	applied, err := st.applySessionDeltas(s.sessionID, func(current []observation) []observation {
+	applied, err := st.applySessionDeltas(s, func(current []observation) []observation {
 		return applyDeltas(current, result, s)
 	})
 	if err != nil {
 		return fmt.Errorf("writing observations: %w", err)
 	}
 	if applied {
-		state.markProcessed(s.sessionID)
+		state.markProcessed(sessionStateKey(s.product, s.sessionID))
 	} else {
 		fmt.Println("  session was already processed by another distill process — skipping write")
 	}
@@ -229,12 +255,13 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 // so the server (and the next `--new` invocation) sees progress mid-batch.
 // In dry-run mode, the in-memory state still gets updated for the rest of
 // the batch but is never persisted.
-func markProcessed(st store, state *stateFile, sessionID string, dryRun bool) {
-	state.markProcessed(sessionID)
+func markProcessed(st store, state *stateFile, s sessionMeta, dryRun bool) {
+	key := sessionStateKey(s.product, s.sessionID)
+	state.markProcessed(key)
 	if dryRun {
 		return
 	}
-	if err := st.markProcessed(sessionID); err != nil {
+	if err := st.markProcessed(key); err != nil {
 		fmt.Fprintf(os.Stderr, "  warn: state flush failed: %v\n", err)
 	}
 }
@@ -251,7 +278,7 @@ func pickTargets(all []sessionMeta, state *stateFile, opts extractOpts) []sessio
 	if opts.onlyNew {
 		var out []sessionMeta
 		for _, s := range all {
-			if _, seen := state.ProcessedSessions[s.sessionID]; !seen {
+			if !processedSession(state, s) {
 				out = append(out, s)
 			}
 		}
@@ -285,6 +312,7 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		}
 		o.Evidence = append(o.Evidence, evidence{
 			SessionID:  s.sessionID,
+			Product:    s.product,
 			TurnRefs:   r.EvidenceTurnRefs,
 			Quote:      r.EvidenceQuote,
 			RecordedAt: now,
@@ -298,8 +326,9 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		if !ok {
 			continue
 		}
-		if !contains(o.ContradictedBy, s.sessionID) {
-			o.ContradictedBy = append(o.ContradictedBy, s.sessionID)
+		key := sessionStateKey(s.product, s.sessionID)
+		if !contains(o.ContradictedBy, key) && !contains(o.ContradictedBy, s.sessionID) {
+			o.ContradictedBy = append(o.ContradictedBy, key)
 		}
 		o.LastSeen = now
 	}
@@ -317,6 +346,7 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 			LastSeen:  now,
 			Evidence: []evidence{{
 				SessionID:  s.sessionID,
+				Product:    s.product,
 				TurnRefs:   n.EvidenceTurnRefs,
 				Quote:      n.EvidenceQuote,
 				RecordedAt: now,
@@ -473,6 +503,7 @@ func buildExtractPrompt(s sessionMeta, transcript string, existing []observation
 	}
 	out := string(raw)
 	out = strings.ReplaceAll(out, "{{SESSION_ID}}", s.sessionID)
+	out = strings.ReplaceAll(out, "{{SESSION_PRODUCT}}", string(s.product))
 	out = strings.ReplaceAll(out, "{{SESSION_CWD}}", cwd)
 	out = strings.ReplaceAll(out, "{{TRANSCRIPT}}", transcript)
 	out = strings.ReplaceAll(out, "{{EXISTING_OBSERVATIONS}}", renderObservationsForPrompt(existing))

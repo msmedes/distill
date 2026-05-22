@@ -43,6 +43,7 @@ func runServe(args []string) error {
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/obs/", srv.handleObsAction)
 	mux.HandleFunc("/synthesize", srv.handleSynthesize)
+	mux.HandleFunc("/settings", srv.handleSettings)
 
 	addr := net.JoinHostPort(*host, fmt.Sprint(*port))
 	httpSrv := &http.Server{
@@ -90,6 +91,22 @@ func (s *server) loadTemplates() error {
 			return t.Local().Format("2006-01-02 15:04")
 		},
 		"join": strings.Join,
+		"productsFor": func(evidence []evidence) []product {
+			seen := map[product]bool{}
+			var out []product
+			for _, e := range evidence {
+				p := e.Product
+				if p == "" {
+					p = productClaude
+				}
+				if seen[p] {
+					continue
+				}
+				seen[p] = true
+				out = append(out, p)
+			}
+			return out
+		},
 	}
 	tmpl, err := template.New("observations.html").Funcs(funcs).
 		ParseFS(templatesFS, "templates/observations.html")
@@ -106,6 +123,7 @@ type indexData struct {
 	SessionsProcessed int
 	Filter            string
 	Types             []observationType
+	Preferences       preferences
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +167,11 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionsProcessed := len(state.ProcessedSessions)
+	prefs, err := readPreferences(s.paths)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reading preferences: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	data := indexData{
 		Observations:      filtered,
@@ -158,12 +181,33 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Types: []observationType{
 			typePreference, typeWorkflow, typeFriction, typeToolUse,
 		},
+		Preferences: prefs,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.indexTmpl.Execute(w, data); err != nil {
 		log.Printf("template execute: %v", err)
 	}
+}
+
+func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := writePreferences(s.paths, preferences{
+		AlwaysOnPath: r.FormValue("always_on_path"),
+		SkillsDir:    r.FormValue("skills_dir"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // handleObsAction dispatches POSTs of the shape /obs/{id}/{action}.
