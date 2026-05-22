@@ -93,11 +93,61 @@
       align-items: center;
       padding: 0 12px 12px;
     }
-    .settings-form label {
+    .setting-label {
       font-family: var(--mono);
       font-size: 10px;
       color: var(--fg-faint);
       text-transform: lowercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .help-dot {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--bg);
+      color: var(--fg-soft);
+      cursor: help;
+      font-family: var(--mono);
+      font-size: 10px;
+      line-height: 1;
+      padding: 0;
+      text-transform: none;
+    }
+    .help-dot::after {
+      content: attr(data-help);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      z-index: 2;
+      width: min(280px, calc(100vw - 48px));
+      padding: 8px 10px;
+      border: 1px solid var(--fg-soft);
+      border-radius: 4px;
+      background: var(--fg);
+      color: var(--bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: none;
+      white-space: normal;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 4px);
+      transition: opacity 0.12s, transform 0.12s;
+    }
+    .help-dot:hover::after,
+    .help-dot:focus::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
     }
     .settings-form input {
       font-family: var(--mono);
@@ -127,6 +177,48 @@
     .settings-form button:hover {
       color: var(--fg);
       border-color: var(--fg-soft);
+    }
+    .settings-faq {
+      grid-column: 1 / -1;
+      margin: 4px 0 0;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-soft);
+      color: var(--fg-soft);
+      font-size: 12px;
+    }
+    .settings-faq summary {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      list-style: none;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+      user-select: none;
+    }
+    .settings-faq summary::-webkit-details-marker { display: none; }
+    .settings-faq summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 12px;
+      transition: transform 0.1s;
+    }
+    .settings-faq[open] summary::before { transform: rotate(90deg); }
+    .settings-faq dl {
+      margin: 8px 0 0 17px;
+      display: grid;
+      gap: 7px;
+    }
+    .settings-faq dt {
+      color: var(--fg);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .settings-faq dd {
+      margin: -5px 0 0;
+      max-width: 68ch;
+      line-height: 1.45;
     }
     .propose-btn {
       font-family: var(--mono);
@@ -563,11 +655,22 @@
   <details class="settings">
     <summary>promotion destinations</summary>
     <form class="settings-form" method="POST" action="/settings">
-      <label for="always-on-path">always-on</label>
-      <input id="always-on-path" name="always_on_path" value="{{.Preferences.AlwaysOnPath}}" autocomplete="off">
-      <label for="skills-dir">skills dir</label>
-      <input id="skills-dir" name="skills_dir" value="{{.Preferences.SkillsDir}}" autocomplete="off">
+      <div class="setting-label"><span id="always-on-label">always-on</span> <button type="button" class="help-dot" aria-label="always-on help" data-help="The instruction file distill appends to when you promote a stable preference that should apply to every future agent session.">?</button></div>
+      <input id="always-on-path" name="always_on_path" value="{{.Preferences.AlwaysOnPath}}" autocomplete="off" aria-labelledby="always-on-label">
+      <div class="setting-label"><span id="skills-dir-label">skills dir</span> <button type="button" class="help-dot" aria-label="skills dir help" data-help="The folder where distill writes generated SKILL.md files for situational workflows and reusable task guidance.">?</button></div>
+      <input id="skills-dir" name="skills_dir" value="{{.Preferences.SkillsDir}}" autocomplete="off" aria-labelledby="skills-dir-label">
       <button>save</button>
+      <details class="settings-faq">
+        <summary>destination faq</summary>
+        <dl>
+          <dt>What does always-on mean?</dt>
+          <dd>A short rule appended to your configured agent instructions file. Use it for stable preferences that should apply in every session.</dd>
+          <dt>When should something become a skill?</dt>
+          <dd>Use a skill for situational guidance: a workflow, domain, repo pattern, or task type that should load only when it is relevant.</dd>
+          <dt>Does distill write these automatically?</dt>
+          <dd>No. It can propose a destination, but nothing is written until you accept a proposal or use a promotion action.</dd>
+        </dl>
+      </details>
     </form>
   </details>
 
