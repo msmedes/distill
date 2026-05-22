@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -17,6 +18,11 @@ type extractOpts struct {
 	dryRun            bool
 	model             string
 	maxTranscriptChar int
+	minUserTurns      int
+	minUserChars      int
+	maxObservations   int
+	zoomContextChars  int
+	noSkip            bool
 }
 
 type stateFile struct {
@@ -24,10 +30,10 @@ type stateFile struct {
 }
 
 type extractionResult struct {
-	Reasoning       string                  `json:"reasoning"`
-	NewObservations []extractedObservation  `json:"new_observations"`
-	Reinforced      []extractedReinforce    `json:"reinforced"`
-	Contradicted    []extractedContradict   `json:"contradicted"`
+	Reasoning       string                 `json:"reasoning"`
+	NewObservations []extractedObservation `json:"new_observations"`
+	Reinforced      []extractedReinforce   `json:"reinforced"`
+	Contradicted    []extractedContradict  `json:"contradicted"`
 }
 
 type extractedObservation struct {
@@ -57,7 +63,12 @@ func runExtract(args []string) error {
 		onlyNew   = fs.Bool("new", false, "process all unprocessed sessions (overrides --recent)")
 		dryRun    = fs.Bool("dry-run", false, "show what would be extracted, don't write")
 		model     = fs.String("model", "haiku", "model to use: haiku | sonnet")
-		maxChars  = fs.Int("max-transcript-chars", 200_000, "truncate transcripts longer than this")
+		maxChars  = fs.Int("max-transcript-chars", 60_000, "truncate rendered user-message excerpts longer than this")
+		minTurns  = fs.Int("min-user-turns", 2, "skip sessions with fewer user turns unless high-signal language appears")
+		minChars  = fs.Int("min-user-chars", 200, "skip sessions with fewer user-message chars unless high-signal language appears")
+		maxObs    = fs.Int("max-observations", 80, "maximum relevant existing observations to include in extractor prompt")
+		zoomChars = fs.Int("zoom-context-chars", 2500, "max chars from the preceding assistant turn to include around high-signal user turns")
+		noSkip    = fs.Bool("no-skip", false, "disable cheap local skipping for short low-signal sessions")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -70,6 +81,11 @@ func runExtract(args []string) error {
 		dryRun:            *dryRun,
 		model:             *model,
 		maxTranscriptChar: *maxChars,
+		minUserTurns:      *minTurns,
+		minUserChars:      *minChars,
+		maxObservations:   *maxObs,
+		zoomContextChars:  *zoomChars,
+		noSkip:            *noSkip,
 	}
 
 	p, err := resolvePaths()
@@ -130,9 +146,18 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 		return nil
 	}
 
-	rendered := renderTranscript(turns)
+	signal := summarizeTranscriptSignal(turns)
+	if !opts.noSkip && shouldSkipExtraction(signal, opts) {
+		fmt.Printf("  low-signal session: %d user turn(s), %d user chars, no correction/preference markers — skipping claude call\n",
+			signal.userTurns, signal.userChars)
+		markProcessed(p, state, s.sessionID, opts.dryRun)
+		fmt.Println()
+		return nil
+	}
+
+	rendered := renderExtractionTranscript(turns, opts.zoomContextChars)
 	if len(rendered) > opts.maxTranscriptChar {
-		fmt.Printf("  transcript truncated: %d → %d chars\n", len(rendered), opts.maxTranscriptChar)
+		fmt.Printf("  user-message excerpt truncated: %d → %d chars\n", len(rendered), opts.maxTranscriptChar)
 		rendered = rendered[:opts.maxTranscriptChar] + "\n\n[...transcript truncated...]"
 	}
 
@@ -141,7 +166,12 @@ func processOne(p paths, state *stateFile, s sessionMeta, opts extractOpts) erro
 		return fmt.Errorf("reading observations: %w", err)
 	}
 
-	prompt, err := buildExtractPrompt(s, rendered, existing)
+	relevantExisting := relevantObservations(existing, rendered, opts.maxObservations)
+	if len(relevantExisting) < len(existing) {
+		fmt.Printf("  prompt context: %d/%d observations selected\n", len(relevantExisting), len(existing))
+	}
+
+	prompt, err := buildExtractPrompt(s, rendered, relevantExisting)
 	if err != nil {
 		return err
 	}
@@ -309,6 +339,119 @@ func printExtractSummary(r extractionResult) {
 	for _, c := range r.Contradicted {
 		fmt.Printf("    ! %s: %s\n", c.ObsID, c.Explanation)
 	}
+}
+
+type transcriptSignal struct {
+	userTurns   int
+	userChars   int
+	markerCount int
+}
+
+var extractionSignalMarkers = []string{
+	"actually",
+	"always",
+	"don't",
+	"do not",
+	"i don't want",
+	"i prefer",
+	"i want",
+	"instead",
+	"make sure",
+	"never",
+	"no,",
+	"remember",
+	"shouldn't",
+	"stop",
+	"that's wrong",
+	"wait",
+	"wrong",
+	"you keep",
+}
+
+func summarizeTranscriptSignal(turns []transcriptTurn) transcriptSignal {
+	var s transcriptSignal
+	for _, t := range turns {
+		if t.role != "user" {
+			continue
+		}
+		s.userTurns++
+		s.userChars += len(t.text)
+		if hasExtractionSignalMarker(t.text) {
+			s.markerCount++
+		}
+	}
+	return s
+}
+
+func shouldSkipExtraction(s transcriptSignal, opts extractOpts) bool {
+	if s.markerCount > 0 {
+		return false
+	}
+	return s.userTurns < opts.minUserTurns || s.userChars < opts.minUserChars
+}
+
+func hasExtractionSignalMarker(text string) bool {
+	lower := strings.ToLower(text)
+	for _, marker := range extractionSignalMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func relevantObservations(obs []observation, query string, max int) []observation {
+	if max <= 0 || len(obs) <= max {
+		return obs
+	}
+	queryTokens := tokenSet(query)
+	type scoredObservation struct {
+		observation observation
+		score       int
+	}
+	scored := make([]scoredObservation, 0, len(obs))
+	for _, o := range obs {
+		score := 0
+		for token := range tokenSet(o.Claim) {
+			if queryTokens[token] {
+				score++
+			}
+		}
+		if score > 0 {
+			scored = append(scored, scoredObservation{observation: o, score: score})
+		}
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		if scored[i].observation.EvidenceCount != scored[j].observation.EvidenceCount {
+			return scored[i].observation.EvidenceCount > scored[j].observation.EvidenceCount
+		}
+		return scored[i].observation.ID < scored[j].observation.ID
+	})
+	if len(scored) > max {
+		scored = scored[:max]
+	}
+	out := make([]observation, len(scored))
+	for i, o := range scored {
+		out[i] = o.observation
+	}
+	return out
+}
+
+func tokenSet(text string) map[string]bool {
+	tokens := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+	out := make(map[string]bool, len(tokens))
+	for _, token := range tokens {
+		if len(token) < 4 {
+			continue
+		}
+		out[token] = true
+	}
+	return out
 }
 
 func buildExtractPrompt(s sessionMeta, transcript string, existing []observation) (string, error) {

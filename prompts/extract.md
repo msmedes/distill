@@ -1,6 +1,6 @@
 # Observation extraction
 
-You are reading a transcript of a single coding session between a developer and Claude Code. Your job is to extract **observations** about the developer — claims about their preferences, workflows, friction points, or tool-use patterns — that would help future agents work with them better.
+You are reading user-authored turns from a single coding session between a developer and Claude Code. Some high-signal user turns include a bounded preceding assistant turn as local context. Your job is to extract **observations** about the developer — claims about their preferences, workflows, friction points, or tool-use patterns — that would help future agents work with them better.
 
 ## What you are looking for
 
@@ -24,7 +24,7 @@ You are reading a transcript of a single coding session between a developer and 
 
 ## Existing observations
 
-Before adding a new observation, check the list below. If your finding matches an existing one, output a `reinforced` entry instead of a new observation. If your finding *contradicts* an existing one (the user did the opposite of what the observation predicts), output a `contradicted` entry.
+Before adding a new observation, check the relevant existing observations below. If your finding matches an existing one, output a `reinforced` entry instead of a new observation. If your finding *contradicts* an existing one (the user did the opposite of what the observation predicts), output a `contradicted` entry.
 
 ```
 {{EXISTING_OBSERVATIONS}}
@@ -33,6 +33,8 @@ Before adding a new observation, check the list below. If your finding matches a
 ## Evidence requirements
 
 Every observation, reinforcement, or contradiction must cite **specific turn numbers** and include a **short quote** from the transcript. No hand-waving. If you can't cite a turn, you can't emit the observation.
+
+When local assistant context is present, use it only to understand what the user was correcting. Evidence quotes should come from the user's words unless the assistant quote is necessary to identify the corrected behavior.
 
 ## Output
 
@@ -66,7 +68,7 @@ Output a single JSON object. **Default toward emitting nothing.** Most sessions 
 }
 ```
 
-## Transcript
+## User-message excerpt
 
 Session ID: `{{SESSION_ID}}`
 Project cwd: `{{SESSION_CWD}}`

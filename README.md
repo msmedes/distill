@@ -75,7 +75,12 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `--new`                  | off    | Process every unprocessed session (combine with `--recent` to cap). |
 | `--dry-run`              | off    | Show what would be extracted without writing. |
 | `--model <haiku\|sonnet>` | `haiku` | Model for the per-session pass. |
-| `--max-transcript-chars` | `200000` | Truncate transcripts longer than this. |
+| `--max-transcript-chars` | `60000` | Truncate rendered user-message excerpts longer than this. |
+| `--min-user-turns <n>` | `2` | Skip sessions with fewer user turns unless correction/preference language appears. |
+| `--min-user-chars <n>` | `200` | Skip sessions with fewer user-message chars unless correction/preference language appears. |
+| `--max-observations <n>` | `80` | Include at most this many relevant existing observations in the extractor prompt. |
+| `--zoom-context-chars <n>` | `2500` | Include up to this many chars from the preceding assistant turn around high-signal user turns. |
+| `--no-skip` | off | Disable cheap local skipping for short low-signal sessions. |
 
 ### `serve` flags
 
@@ -141,6 +146,10 @@ Known follow-ups:
 ## Auto-extract on session end
 
 `distill install` writes a `SessionEnd` hook into `~/.claude/settings.json`. When a Claude Code session ends, the hook receives the session id on stdin and spawns `distill extract --session <id>` detached — Claude Code returns immediately, the extract runs in the background. Output goes to `~/.distill/hook.log`.
+
+The extractor does a cheap local pass before calling Claude. Short sessions with no correction/preference markers are marked processed without an LLM call, and non-skipped sessions send user-authored turns plus bounded local assistant context around high-signal corrections. Existing observations are reduced to a relevant capped subset.
+
+distill also marks its own extractor `claude -p` calls as internal and runs them without session persistence. If Claude still emits a hook event for one of those internal calls, the hook logs it and skips extraction instead of recursing.
 
 ```sh
 ./distill install              # install the hook

@@ -153,6 +153,64 @@ func renderTranscript(turns []transcriptTurn) string {
 	return b.String()
 }
 
+// renderExtractionTranscript formats user-authored turns for extraction and
+// includes a bounded preceding assistant turn when the user turn contains
+// correction/preference language. That gives the model enough local context to
+// understand what the user was correcting without loading the whole session.
+func renderExtractionTranscript(turns []transcriptTurn, zoomContextChars int) string {
+	var b strings.Builder
+	wrote := false
+	for i, t := range turns {
+		if t.role != "user" {
+			continue
+		}
+		if wrote {
+			b.WriteString("\n\n---\n\n")
+		}
+		wrote = true
+		uuidShort := t.uuid
+		if len(uuidShort) > 8 {
+			uuidShort = uuidShort[:8]
+		}
+		fmt.Fprintf(&b, "[turn %d | user | %s]\n%s", i+1, uuidShort, t.text)
+		if zoomContextChars > 0 && hasExtractionSignalMarker(t.text) {
+			if prior, ok := previousAssistantTurn(turns, i); ok {
+				b.WriteString("\n\n[local context: preceding assistant turn]\n")
+				fmt.Fprintf(&b, "[turn %d | assistant | %s]\n%s", prior.index+1, shortUUID(prior.turn.uuid), tailString(prior.turn.text, zoomContextChars))
+			}
+		}
+	}
+	return b.String()
+}
+
+type indexedTranscriptTurn struct {
+	index int
+	turn  transcriptTurn
+}
+
+func previousAssistantTurn(turns []transcriptTurn, before int) (indexedTranscriptTurn, bool) {
+	for i := before - 1; i >= 0; i-- {
+		if turns[i].role == "assistant" {
+			return indexedTranscriptTurn{index: i, turn: turns[i]}, true
+		}
+	}
+	return indexedTranscriptTurn{}, false
+}
+
+func shortUUID(uuid string) string {
+	if len(uuid) > 8 {
+		return uuid[:8]
+	}
+	return uuid
+}
+
+func tailString(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return "[...assistant context truncated...]\n" + s[len(s)-max:]
+}
+
 func extractText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""

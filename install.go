@@ -92,7 +92,6 @@ func runHook(_ []string) error {
 	if payload.SessionID == "" {
 		return errors.New("hook payload missing session_id")
 	}
-
 	p, err := resolvePaths()
 	if err != nil {
 		return err
@@ -106,10 +105,15 @@ func runHook(_ []string) error {
 	if err != nil {
 		return fmt.Errorf("opening hook log: %w", err)
 	}
+	defer logFile.Close()
+
+	if os.Getenv("DISTILL_INTERNAL") == "1" {
+		fmt.Fprintf(logFile, "skipping internal distill claude session %s\n", payload.SessionID)
+		return nil
+	}
 
 	binaryPath, err := os.Executable()
 	if err != nil {
-		logFile.Close()
 		return err
 	}
 
@@ -119,7 +123,6 @@ func runHook(_ []string) error {
 	cmd.Stdin = nil
 	detachProcess(cmd)
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
 		return fmt.Errorf("spawning extract: %w", err)
 	}
 	// Don't wait — the child runs detached; the parent (hook) returns immediately.
@@ -127,7 +130,6 @@ func runHook(_ []string) error {
 		// Non-fatal — the child has already been started.
 		fmt.Fprintln(os.Stderr, "warn:", err)
 	}
-	logFile.Close()
 	return nil
 }
 

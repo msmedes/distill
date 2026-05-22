@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -37,9 +38,13 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 		"-p",
 		"--model", string(model),
 		"--output-format", "text",
+		"--no-session-persistence",
+		"--disable-slash-commands",
+		"--tools", "",
 	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Env = append(os.Environ(), "DISTILL_INTERNAL=1")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
