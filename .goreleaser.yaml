@@ -1,0 +1,82 @@
+version: 2
+
+project_name: distill
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: distill
+    main: .
+    binary: distill
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: distill
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+      - 'Merge pull request'
+      - 'Merge branch'
+
+brews:
+  - name: distill
+    repository:
+      owner: msmedes
+      name: homebrew-distill
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      branch: main
+    homepage: https://github.com/msmedes/distill
+    description: Turn Claude Code session transcripts into a curated model of you
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(formula): bump {{ .ProjectName }} to {{ .Tag }}"
+    caveats: |
+      distill calls the `claude` CLI at runtime for all LLM work — install
+      Claude Code first and sign in:
+
+        https://docs.claude.com/en/docs/claude-code
+
+      To auto-extract on every session end (optional, recommended):
+
+        distill install
+
+      Your local state lives at ~/.distill/.
+    install: |
+      bin.install "distill"
+    test: |
+      system "#{bin}/distill", "help"
+
+release:
+  draft: false
+  prerelease: auto

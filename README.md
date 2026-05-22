@@ -11,7 +11,17 @@ For the load-bearing design decisions, see [`_meta/adr/`](./_meta/adr).
 
 ## Install
 
-Requires Go 1.22+ and an authenticated `claude` CLI on `PATH`. distill calls `claude -p` for all LLM work, so it rides your existing Claude Code login — no Anthropic API key needed. See [ADR 0002](./_meta/adr/0002-claude-p-for-llm-calls.md).
+distill calls the `claude` CLI for all LLM work, so it rides your existing Claude Code login — no Anthropic API key needed. See [ADR 0002](./_meta/adr/0002-claude-p-for-llm-calls.md). Install Claude Code first: <https://docs.claude.com/en/docs/claude-code>.
+
+### Homebrew (macOS / Linux)
+
+```sh
+brew install msmedes/distill/distill
+```
+
+### From source
+
+Requires Go 1.24+.
 
 ```sh
 git clone https://github.com/msmedes/distill.git
@@ -19,7 +29,7 @@ cd distill
 go build -o distill .
 ```
 
-A single static binary lands at `./distill`. No runtime dependencies.
+A single static binary lands at `./distill`. No runtime dependencies beyond `claude`.
 
 ## Quickstart
 

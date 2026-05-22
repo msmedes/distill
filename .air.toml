@@ -1,0 +1,25 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "./tmp/distill"
+  cmd = "go build -o ./tmp/distill ."
+  args_bin = ["serve"]
+  include_ext = ["go", "html"]
+  exclude_dir = ["tmp", "dist", "_meta", ".git", "prompts"]
+  delay = 200
+  kill_delay = "0s"
+  stop_on_error = true
+
+[log]
+  time = false
+  main_only = false
+
+[color]
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  app = ""
+
+[misc]
+  clean_on_exit = true
