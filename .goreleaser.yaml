@@ -49,6 +49,7 @@ changelog:
 
 brews:
   - name: distill
+    directory: Formula
     repository:
       owner: msmedes
       name: homebrew-distill
