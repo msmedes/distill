@@ -662,7 +662,7 @@
   <details class="settings">
     <summary>promotion destinations</summary>
     <form class="settings-form" method="POST" action="/settings">
-      <div class="setting-label"><span id="always-on-label">always-on</span> <button type="button" class="help-dot" aria-label="always-on help" data-help="The instruction file distill appends to when you promote a stable preference that should apply to every future agent session.">?</button></div>
+      <div class="setting-label"><span id="always-on-label">always-on</span> <button type="button" class="help-dot" aria-label="always-on help" data-help="The instruction file distill rewrites by preview when you promote a stable preference that should apply to every future agent session.">?</button></div>
       <input id="always-on-path" name="always_on_path" value="{{.Preferences.AlwaysOnPath}}" autocomplete="off" aria-labelledby="always-on-label">
       <div class="setting-label"><span id="skills-dir-label">skills dir</span> <button type="button" class="help-dot" aria-label="skills dir help" data-help="The folder where distill writes generated SKILL.md files for situational workflows and reusable task guidance.">?</button></div>
       <input id="skills-dir" name="skills_dir" value="{{.Preferences.SkillsDir}}" autocomplete="off" aria-labelledby="skills-dir-label">

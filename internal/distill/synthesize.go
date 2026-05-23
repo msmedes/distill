@@ -17,6 +17,12 @@ type proposalsResponse struct {
 	} `json:"proposals"`
 }
 
+type synthesizedProposal struct {
+	ObsID     string `json:"obs_id"`
+	Kind      string `json:"kind"`
+	Reasoning string `json:"reasoning"`
+}
+
 func runSynthesize(args []string) error {
 	fs := flag.NewFlagSet("synthesize", flag.ExitOnError)
 	model := fs.String("model", "sonnet", "model to use: haiku | sonnet | opus")
@@ -57,39 +63,15 @@ func runSynthesize(args []string) error {
 // attaches LLM-proposed promotions. Returns the number of newly-attached
 // proposals (proposals already present on an observation are skipped).
 func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, error) {
+	resp, err := generateSynthesizedProposals(ctx, p, model)
+	if err != nil {
+		return 0, err
+	}
 	st := newStore(p)
-	obs, err := st.readObservations()
-	if err != nil {
-		return 0, err
-	}
-
-	active := activeObservations(obs)
-	if len(active) == 0 {
-		return 0, nil
-	}
-
-	prompt, err := buildSynthesizePrompt(active)
-	if err != nil {
-		return 0, err
-	}
-
-	raw, err := callClaude(ctx, model, prompt)
-	if err != nil {
-		return 0, fmt.Errorf("synthesize call: %w", err)
-	}
-
-	var resp proposalsResponse
-	if err := json.Unmarshal([]byte(extractJSONBlock(raw)), &resp); err != nil {
-		return 0, fmt.Errorf("parsing synthesis output: %w\nraw: %s", err, truncate(raw, 1500))
-	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
 	added := 0
 	_, err = st.updateObservationsIfChanged(func(obs []observation) ([]observation, bool, error) {
-		for _, prop := range resp.Proposals {
-			if prop.Kind != proposalSkill && prop.Kind != proposalClaudeMD {
-				continue
-			}
+		for _, prop := range resp {
 			i, ok := findObservation(obs, prop.ObsID)
 			if !ok {
 				continue
@@ -113,6 +95,55 @@ func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, erro
 		return added, err
 	}
 	return added, nil
+}
+
+func generateSynthesizedProposals(ctx context.Context, p paths, model modelID) ([]synthesizedProposal, error) {
+	st := newStore(p)
+	obs, err := st.readObservations()
+	if err != nil {
+		return nil, err
+	}
+
+	active := activeObservations(obs)
+	if len(active) == 0 {
+		return nil, nil
+	}
+
+	prompt, err := buildSynthesizePrompt(active)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := callClaude(ctx, model, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("synthesize call: %w", err)
+	}
+
+	var resp proposalsResponse
+	if err := json.Unmarshal([]byte(extractJSONBlock(raw)), &resp); err != nil {
+		return nil, fmt.Errorf("parsing synthesis output: %w\nraw: %s", err, truncate(raw, 1500))
+	}
+
+	byID := make(map[string]observation, len(obs))
+	for _, o := range obs {
+		byID[o.ID] = o
+	}
+	var out []synthesizedProposal
+	for _, prop := range resp.Proposals {
+		if prop.Kind != proposalSkill && prop.Kind != proposalClaudeMD {
+			continue
+		}
+		o, ok := byID[prop.ObsID]
+		if !ok || o.Status != statusActive || hasProposalOfKind(o.Proposals, prop.Kind) {
+			continue
+		}
+		out = append(out, synthesizedProposal{
+			ObsID:     prop.ObsID,
+			Kind:      prop.Kind,
+			Reasoning: strings.TrimSpace(prop.Reasoning),
+		})
+	}
+	return out, nil
 }
 
 func activeObservations(obs []observation) []observation {

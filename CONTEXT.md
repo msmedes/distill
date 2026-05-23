@@ -37,7 +37,7 @@ An LLM-attached suggestion on an observation that recommends promotion to a spec
 _Avoid_: recommendation, suggestion (these are too general).
 
 **Promotion**:
-The act of moving an observation's content into a target file — a new `SKILL.md` or an appended block in the configured always-on instructions file. Always user-confirmed; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md).
+The act of moving an observation's content into a target file — a new `SKILL.md` or an Opus-rewritten configured always-on instructions file. Always user-confirmed via preview and commit; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md).
 _Avoid_: graduation, conversion.
 
 **Skill**:
@@ -45,7 +45,7 @@ A skill file at the configured skills directory, default `~/.agents/skills/<name
 _Avoid_: rule (always-on entries are more rule-shaped; skills are situational).
 
 **Always-on instructions**:
-The user's persistent agent instruction file. distill defaults to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). distill appends promoted observations under an `## Auto-extracted from distill` section. Stable, always-on preferences.
+The user's persistent agent instruction file. distill defaults to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). For always-on promotion, distill asks Opus to rewrite the configured file so the observation fits the existing structure and voice; there is no distill-managed section. Stable, always-on preferences.
 _Avoid_: settings, config, profile.
 
 **Status**:
@@ -72,7 +72,7 @@ A maintenance command that dedups evidence entries within each observation by qu
 - An **Observation** has many **Evidence** entries; duplicate quotes are deduplicated at write time because Claude Code creates a fresh session file on every `/resume`, copying earlier turns verbatim.
 - An **Observation** also has a **Status**, an optional list of **Notes**, and an optional list of **Proposals**.
 - **Synthesize** reads all `active` observations and attaches **Proposals** to a subset; it does not modify any other field.
-- Accepting a **Proposal** performs a **Promotion** to a **Skill** (LLM-generated `SKILL.md` informed by claim + evidence + notes) or to always-on instructions (a single-line bullet append, no LLM rewrite).
+- Accepting a **Proposal** opens a promotion preview. For a **Skill**, the preview contains the generated `SKILL.md` informed by claim + evidence + notes. For always-on instructions, Opus rewrites the complete configured instruction file and the user reviews the diff before commit.
 - After promotion, the observation's status changes; it stays in the store with a `promoted_to` path but disappears from the default view.
 - Ignoring an observation sets `status = ignored`; it is hidden in the default view but can be unignored later.
 

@@ -72,9 +72,10 @@ func runServe(args []string) error {
 }
 
 type server struct {
-	paths     paths
-	indexTmpl *template.Template
-	helpTmpl  *template.Template
+	paths       paths
+	indexTmpl   *template.Template
+	helpTmpl    *template.Template
+	previewTmpl *template.Template
 }
 
 func (s *server) loadTemplates() error {
@@ -121,6 +122,11 @@ func (s *server) loadTemplates() error {
 		return err
 	}
 	s.helpTmpl = helpTmpl
+	previewTmpl, err := template.ParseFS(templatesFS, "templates/preview.html")
+	if err != nil {
+		return err
+	}
+	s.previewTmpl = previewTmpl
 	return nil
 }
 
@@ -264,18 +270,45 @@ func (s *server) handleObsAction(w http.ResponseWriter, r *http.Request) {
 	case "note":
 		res, err = addNote(s.paths, id, r.FormValue("text"))
 	case "promote-claude-md":
-		res, err = promoteToClaudeMD(s.paths, id)
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		preview, err := previewPromoteToClaudeMD(ctx, s.paths, id, true)
+		if err != nil {
+			log.Printf("preview action %s on %s failed: %v", action, id, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.renderPreview(w, r, preview)
+		return
 	case "promote-skill":
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
-		res, err = promoteToSkill(ctx, s.paths, id)
+		preview, err := previewPromoteToSkill(ctx, s.paths, id, true)
+		if err != nil {
+			log.Printf("preview action %s on %s failed: %v", action, id, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.renderPreview(w, r, preview)
+		return
 	case "accept-proposal":
 		kind := r.FormValue("kind")
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
-		res, err = acceptProposal(ctx, s.paths, id, kind)
+		preview, err := previewAcceptProposal(ctx, s.paths, id, kind, true)
+		if err != nil {
+			log.Printf("preview action %s on %s failed: %v", action, id, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.renderPreview(w, r, preview)
+		return
 	case "dismiss-proposal":
 		res, err = dismissProposal(s.paths, id, r.FormValue("kind"))
+	case "commit-promote-claude-md":
+		res, err = commitClaudeMDPreview(s.paths, id, r.FormValue("path"), r.FormValue("output"), r.FormValue("base_hash"))
+	case "commit-promote-skill":
+		res, err = commitSkillPreview(s.paths, id, r.FormValue("path"), r.FormValue("output"))
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 		return
@@ -314,6 +347,17 @@ func (s *server) handleSynthesize(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("synthesize: %d new proposals", added)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *server) renderPreview(w http.ResponseWriter, r *http.Request, preview actionPreview) {
+	preview.BackURL = "/"
+	if ref := r.Header.Get("Referer"); strings.HasPrefix(ref, "http://"+r.Host) || strings.HasPrefix(ref, "https://"+r.Host) {
+		preview.BackURL = ref
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.previewTmpl.Execute(w, preview); err != nil {
+		log.Printf("preview template execute: %v", err)
+	}
 }
 
 // statusRank orders observations on the page: active first, ignored at the

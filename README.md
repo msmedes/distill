@@ -2,7 +2,7 @@
 
 # distill
 
-Build a model of yourself — your preferences, workflows, friction points — from your Claude Code and Codex session history. Curate it through a local web UI. Promote the signal into skills or always-on instruction entries.
+Build a model of yourself — your preferences, workflows, friction points — from your Claude Code and Codex session history. Curate it through a local web UI. Promote the signal into skills or always-on instructions.
 
 distill never autonomously writes to your agent artifacts. The LLM extracts and proposes; you accept or dismiss. Promotion destinations are configurable in the web UI.
 
@@ -124,7 +124,7 @@ distill never modifies source sessions.
 Promoted observations default to:
 
 - **Skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
-- **Always-on instructions:** appended to `~/.agents/AGENTS.md` under an `## Auto-extracted from distill` section. Raw append, no LLM rewrite — edit by hand to reshape.
+- **Always-on instructions:** Opus rewrites the configured instruction file to integrate the observation into the existing structure. You review the diff before committing; distill does not create a special managed section.
 
 `distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Finally, it asks whether to start `distill watch` automatically at login. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files.
 
@@ -160,7 +160,7 @@ Two passes, two cadences (see [ADR 0003](./_meta/adr/0003-two-cadence-pipeline.m
                                        │
                                        ▼
                           ~/.agents/skills/<name>/SKILL.md
-                          configured always-on file (append)
+                          configured always-on file (Opus rewrite preview)
 ```
 
 ## Status

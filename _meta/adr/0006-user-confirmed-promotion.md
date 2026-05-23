@@ -11,7 +11,7 @@ Counterargument: a single bad skill pollutes *every subsequent agent session* un
 
 ## Decision
 
-Promotion to a skill or CLAUDE.md is **always** user-confirmed. The LLM proposes via Synthesize; the user accepts or dismisses via the UI. Ignored observations stay in the store but disappear from the default view; the user can unignore them later. Distill never autonomously writes to `~/.claude/` artifacts.
+Promotion to a skill or always-on instruction file is **always** user-confirmed. The LLM proposes via Synthesize; the user accepts or dismisses via the UI. Accepting a promotion opens a preview diff first, and the user must explicitly commit that preview before distill writes. Ignored observations stay in the store but disappear from the default view; the user can unignore them later. Distill never autonomously writes to agent artifacts.
 
 ## Consequences
 

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>distill preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-soft: #6b6b6b;
+      --fg-faint: #a8a8a8;
+      --bg: #fafaf9;
+      --bg-card: #ffffff;
+      --bg-card-muted: #f5f4f2;
+      --border: #e7e5e4;
+      --border-soft: #f0efed;
+      --accent: #b45309;
+      --accent-soft: #fef3c7;
+      --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --sans: -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+    }
+    h1 .dot { color: var(--accent); }
+    a {
+      color: var(--fg-soft);
+      text-decoration: none;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    a:hover { color: var(--fg); }
+    .top-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 18px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px dashed var(--accent);
+      border-radius: 999px;
+      padding: 3px 9px;
+      margin-bottom: 14px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .message {
+      margin: 0 0 16px;
+      color: var(--fg-soft);
+      max-width: 72ch;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+    }
+    .meta span {
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 2px 6px;
+      background: var(--bg-card-muted);
+    }
+    .effects {
+      margin: 0 0 18px;
+      padding-left: 18px;
+      color: var(--fg-soft);
+    }
+    .effects li + li { margin-top: 5px; }
+    .output-label {
+      display: block;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      margin-bottom: 7px;
+      text-transform: lowercase;
+    }
+    summary.output-label {
+      cursor: pointer;
+      user-select: none;
+    }
+    summary.output-label:hover { color: var(--fg-soft); }
+    .diff {
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      background: #201f1d;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .diff-line {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      min-height: 22px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .diff-sign {
+      padding: 1px 8px;
+      color: var(--fg-faint);
+      user-select: none;
+      text-align: center;
+    }
+    .diff-text {
+      padding: 1px 10px 1px 0;
+      color: #f5f4f2;
+    }
+    .diff-line.added {
+      background: #10381f;
+    }
+    .diff-line.added .diff-sign,
+    .diff-line.added .diff-text {
+      color: #dcfce7;
+    }
+    .diff-line.removed {
+      background: #4a1818;
+    }
+    .diff-line.removed .diff-sign,
+    .diff-line.removed .diff-text {
+      color: #fee2e2;
+    }
+    .diff-line.context {
+      background: #2a2926;
+    }
+    .diff-line.context .diff-text {
+      color: #a8a29e;
+      font-style: italic;
+    }
+    pre {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      max-height: 68vh;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #201f1d;
+      color: #f5f4f2;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .commit-form {
+      margin: 18px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+    }
+    .commit-form button {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      text-transform: lowercase;
+    }
+    .commit-form button:hover { filter: brightness(0.96); }
+    @media (max-width: 560px) {
+      header.top {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>distill<span class="dot">.</span> preview</h1>
+    <div class="top-actions"><a href="{{.BackURL}}">back</a></div>
+  </header>
+
+  <main class="panel">
+    <div class="eyebrow">{{if .CanCommit}}review before commit{{else}}preview only{{end}}</div>
+    <h2>{{.Title}}</h2>
+    <p class="message">{{.Message}}</p>
+    <div class="meta">
+      {{if .Action}}<span>action={{.Action}}</span>{{end}}
+      {{if .ObservationID}}<span>observation={{.ObservationID}}</span>{{end}}
+      {{if .CommitPath}}<span>path={{.CommitPath}}</span>{{end}}
+    </div>
+    {{if .Effects}}
+    <ul class="effects">
+      {{range .Effects}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+    {{if .Diff}}
+    <div class="output-label">{{.DiffLabel}}</div>
+    <div class="diff">
+      {{range .Diff}}
+      <div class="diff-line {{.Kind}}">
+        <span class="diff-sign">{{if eq .Kind "added"}}+{{else if eq .Kind "removed"}}-{{else}}·{{end}}</span>
+        <span class="diff-text">{{.Text}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+    {{if .Output}}
+    <details>
+      <summary class="output-label">{{.OutputLabel}}</summary>
+      <pre>{{.Output}}</pre>
+    </details>
+    {{end}}
+    {{if .CanCommit}}
+    <form class="commit-form" method="POST" action="/obs/{{.ObservationID}}/{{.CommitAction}}">
+      <input type="hidden" name="path" value="{{.CommitPath}}">
+      <input type="hidden" name="base_hash" value="{{.CommitBaseHash}}">
+      <textarea name="output" hidden>{{.CommitOutput}}</textarea>
+      <button>commit this</button>
+    </form>
+    {{end}}
+  </main>
+</div>
+</body>
+</html>
