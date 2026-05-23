@@ -148,6 +148,9 @@ func TestPrintInstallSummaryShowsWebUINextStep(t *testing.T) {
 	if !strings.Contains(got, "then visit: http://127.0.0.1:7373") {
 		t.Fatalf("summary missing web UI URL:\n%s", got)
 	}
+	if !strings.Contains(got, "agent guide: distill agents") {
+		t.Fatalf("summary missing agent guide command:\n%s", got)
+	}
 }
 
 func TestPrintInstallSummaryKeepsManualWatchCommand(t *testing.T) {

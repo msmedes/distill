@@ -65,6 +65,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `distill list`       | Plain-text dump of accumulated observations. |
 | `distill compact`    | Dedup evidence entries (e.g. after `/resume` duplicated turns). |
 | `distill install`    | Interactive setup for watched products, promotion destinations, and automatic watching. |
+| `distill agents`     | Detailed operating guide for coding agents answering questions about distill. |
 | `distill help`       | Usage. |
 
 ### `extract` flags
@@ -126,6 +127,14 @@ Promoted observations default to:
 - **Always-on instructions:** appended to `~/.agents/AGENTS.md` under an `## Auto-extracted from distill` section. Raw append, no LLM rewrite — edit by hand to reshape.
 
 `distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Finally, it asks whether to start `distill watch` automatically at login. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files.
+
+For agents trying to answer how distill works from an installed binary, run:
+
+```sh
+distill agents
+```
+
+`distill --agents` is also accepted as a top-level alias.
 
 ## Architecture at a glance
 

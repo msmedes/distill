@@ -19,6 +19,7 @@ Usage:
   distill serve      [--port <n>] [--host <addr>]
   distill compact
   distill install    [--yes]
+  distill agents
 
 Examples:
   distill extract                    # process the most recent session
@@ -31,6 +32,7 @@ Examples:
   distill install                    # configure watcher and promotion destinations
   distill list                       # show accumulated observations
   distill serve                      # browse observations in your browser
+  distill agents                     # detailed operating guide for coding agents
 `
 
 func Main(args []string) int {
@@ -75,6 +77,8 @@ func Main(args []string) int {
 			fmt.Fprintf(os.Stderr, "install: %v\n", err)
 			return 1
 		}
+	case "agents", "--agents":
+		printAgentsGuide(os.Stdout)
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
