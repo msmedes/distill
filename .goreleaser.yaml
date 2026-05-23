@@ -68,13 +68,23 @@ brews:
 
         https://docs.claude.com/en/docs/claude-code
 
-      To auto-extract on every session end (optional, recommended):
+      To configure distill:
 
         distill install
+
+      To run the watcher automatically with Homebrew:
+
+        brew services start distill
 
       Your local state lives at ~/.distill/.
     install: |
       bin.install "distill"
+    service: |
+      run [opt_bin/"distill", "watch"]
+      keep_alive true
+      run_at_load true
+      log_path var/"log/distill.log"
+      error_log_path var/"log/distill.log"
     test: |
       system "#{bin}/distill", "help"
 

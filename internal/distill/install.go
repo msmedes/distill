@@ -18,6 +18,15 @@ var launchctl = func(args ...string) error {
 	return exec.Command("launchctl", args...).Run()
 }
 
+var brewPrefix = func(formula string) (string, error) {
+	out, err := exec.Command("brew", "--prefix", formula).Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+var brewServices = func(args ...string) error {
+	return exec.Command("brew", append([]string{"services"}, args...)...).Run()
+}
+
 func runInstall(args []string) error {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	nonInteractive := fs.Bool("yes", false, "accept recommended defaults")
@@ -165,15 +174,31 @@ func configureLaunchdWatcher(prefs preferences) error {
 	if err != nil {
 		return err
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving distill executable: %w", err)
+	}
+	homebrew := isHomebrewDistillExecutable(executable)
 	if !prefs.AutomaticWatch {
 		if err := unloadLaunchdWatcher(plistPath); err != nil {
 			return err
 		}
+		if homebrew && os.Getenv("DISTILL_TEST_LAUNCHD") != "1" {
+			_ = brewServices("stop", "distill")
+		}
 		return nil
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolving distill executable: %w", err)
+	if homebrew {
+		if err := unloadLaunchdWatcher(plistPath); err != nil {
+			return err
+		}
+		if os.Getenv("DISTILL_TEST_LAUNCHD") == "1" {
+			return nil
+		}
+		if err := brewServices("restart", "distill"); err != nil {
+			return fmt.Errorf("restarting Homebrew service: %w", err)
+		}
+		return nil
 	}
 	if err := writeLaunchdPlist(plistPath, executable, prefs.watchProduct()); err != nil {
 		return err
@@ -186,6 +211,28 @@ func configureLaunchdWatcher(prefs preferences) error {
 		return fmt.Errorf("loading launchd watcher: %w", err)
 	}
 	return nil
+}
+
+func isHomebrewDistillExecutable(executable string) bool {
+	if os.Getenv("DISTILL_TEST_HOMEBREW_SERVICE") == "1" {
+		return true
+	}
+	prefix, err := brewPrefix("distill")
+	if err != nil || strings.TrimSpace(prefix) == "" {
+		return false
+	}
+	if pathWithinDir(executable, prefix) {
+		return true
+	}
+	realExecutable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return false
+	}
+	realPrefix, err := filepath.EvalSymlinks(prefix)
+	if err != nil {
+		return false
+	}
+	return pathWithinDir(realExecutable, realPrefix)
 }
 
 func unloadLaunchdWatcher(plistPath string) error {
@@ -273,7 +320,10 @@ func printInstallSummary(out io.Writer, prefs preferences) {
 	}
 	fmt.Fprintf(out, "  skills: %s\n", prefs.SkillsDir)
 	if prefs.AutomaticWatch {
-		if plistPath, err := launchdPlistPath(); err == nil {
+		if runningFromHomebrew() {
+			fmt.Fprintln(out, "  automatic watch: Homebrew service")
+			fmt.Fprintln(out, "  service command: brew services restart distill")
+		} else if plistPath, err := launchdPlistPath(); err == nil {
 			fmt.Fprintf(out, "  automatic watch: %s\n", plistPath)
 		} else {
 			fmt.Fprintln(out, "  automatic watch: enabled")
@@ -288,4 +338,12 @@ func printInstallSummary(out io.Writer, prefs preferences) {
 	fmt.Fprintln(out, "agent guide: distill agents")
 	fmt.Fprintln(out, "open the web UI: distill serve")
 	fmt.Fprintln(out, "then visit: http://127.0.0.1:7373")
+}
+
+func runningFromHomebrew() bool {
+	executable, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	return isHomebrewDistillExecutable(executable)
 }

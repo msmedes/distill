@@ -132,6 +132,74 @@ func TestConfigureLaunchdWatcherManualRemovesPlist(t *testing.T) {
 	}
 }
 
+func TestConfigureLaunchdWatcherUsesHomebrewServiceForHomebrewBinary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DISTILL_TEST_HOMEBREW_SERVICE", "1")
+	oldLaunchctl := launchctl
+	oldBrewServices := brewServices
+	t.Cleanup(func() {
+		launchctl = oldLaunchctl
+		brewServices = oldBrewServices
+	})
+	launchctl = func(args ...string) error { return nil }
+	var brewCalls [][]string
+	brewServices = func(args ...string) error {
+		brewCalls = append(brewCalls, append([]string(nil), args...))
+		return nil
+	}
+
+	prefs, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefs.AutomaticWatch = true
+
+	if err := configureLaunchdWatcher(prefs); err != nil {
+		t.Fatal(err)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist")
+	if _, err := mustStatMissing(plistPath); err != nil {
+		t.Fatal(err)
+	}
+	if len(brewCalls) != 1 || brewCalls[0][0] != "restart" || brewCalls[0][1] != "distill" {
+		t.Fatalf("expected brew services restart distill, got %#v", brewCalls)
+	}
+}
+
+func TestConfigureLaunchdWatcherStopsHomebrewServiceWhenAutomaticWatchDisabled(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DISTILL_TEST_HOMEBREW_SERVICE", "1")
+	oldLaunchctl := launchctl
+	oldBrewServices := brewServices
+	t.Cleanup(func() {
+		launchctl = oldLaunchctl
+		brewServices = oldBrewServices
+	})
+	launchctl = func(args ...string) error { return nil }
+	var brewCalls [][]string
+	brewServices = func(args ...string) error {
+		brewCalls = append(brewCalls, append([]string(nil), args...))
+		return nil
+	}
+
+	prefs, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefs.AutomaticWatch = false
+
+	if err := configureLaunchdWatcher(prefs); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(brewCalls) != 1 || brewCalls[0][0] != "stop" || brewCalls[0][1] != "distill" {
+		t.Fatalf("expected brew services stop distill, got %#v", brewCalls)
+	}
+}
+
 func TestPrintInstallSummaryShowsWebUINextStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	prefs, err := defaultPreferences()
@@ -150,6 +218,25 @@ func TestPrintInstallSummaryShowsWebUINextStep(t *testing.T) {
 	}
 	if !strings.Contains(got, "agent guide: distill agents") {
 		t.Fatalf("summary missing agent guide command:\n%s", got)
+	}
+}
+
+func TestPrintInstallSummaryShowsHomebrewServiceCommand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("DISTILL_TEST_HOMEBREW_SERVICE", "1")
+	prefs, err := defaultPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+
+	printInstallSummary(&out, prefs)
+	got := out.String()
+	if !strings.Contains(got, "automatic watch: Homebrew service") {
+		t.Fatalf("summary missing Homebrew service:\n%s", got)
+	}
+	if !strings.Contains(got, "service command: brew services restart distill") {
+		t.Fatalf("summary missing brew services command:\n%s", got)
 	}
 }
 

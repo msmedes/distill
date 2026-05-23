@@ -122,7 +122,13 @@ Watcher startup behavior
     - parsing or LLM errors were written to ~/.distill/watch.log
 
 Install-time automation
-  Automatic watching on macOS is a launchd user agent:
+  Homebrew installs should use the formula service:
+    brew services start distill
+
+  Restart after Homebrew upgrades to pick up the new binary:
+    brew services restart distill
+
+  Non-Homebrew automatic watching on macOS is a launchd user agent:
     ~/Library/LaunchAgents/com.msmedes.distill.watch.plist
 
   The launchd program arguments are:

@@ -17,6 +17,8 @@ distill calls the `claude` CLI for all LLM work, so it rides your existing Claud
 
 ```sh
 brew install msmedes/distill/distill
+distill install
+brew services start distill  # optional background watcher
 ```
 
 ### From source
@@ -186,7 +188,15 @@ The extractor does a cheap local pass before calling Claude. Short sessions with
 ./distill watch --quiet-for 30m         # wait longer before processing active files
 ```
 
-If you choose automatic watching during `install`, distill writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Logs go to `~/.distill/watch.log`. If you choose manual watching, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
+For Homebrew installs, automatic watching is managed by Homebrew services:
+
+```sh
+brew services start distill
+brew services restart distill  # after brew upgrade, to pick up the new binary
+brew services stop distill
+```
+
+The Homebrew service runs `distill watch`, which reads the watched products from `~/.distill/preferences.json`. For non-Homebrew installs, choosing automatic watching during `install` writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Homebrew service logs go to Homebrew's log directory; direct launchd logs go to `~/.distill/watch.log`. If you choose manual watching, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
 
 `install` does not keep the web server running. At the end it prints `distill serve` and `http://127.0.0.1:7373`; run that command whenever you want to review observations, accept proposals, or change promotion destinations.
 
