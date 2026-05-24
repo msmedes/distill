@@ -80,8 +80,16 @@ brews:
     install: |
       bin.install "distill"
     post_install: |
-      if `brew services list 2>/dev/null`.match?(/^(msmedes\/distill\/)?distill\s+started/)
-        system "brew", "services", "restart", "msmedes/distill/distill"
+      # Restart the watcher only if it was already running, so upgrades pick
+      # up the new binary. Using `launchctl kickstart` (not `brew services
+      # restart`) avoids the plist-write permission error you hit when
+      # brew-from-brew tries to rewrite the LaunchAgent during an upgrade.
+      if OS.mac? && `brew services list 2>/dev/null`.match?(/^(msmedes\/distill\/)?distill\s+started/)
+        label = "homebrew.mxcl.distill"
+        plist = "#{Dir.home}/Library/LaunchAgents/#{label}.plist"
+        if File.exist?(plist)
+          system "launchctl", "kickstart", "-k", "gui/#{Process.uid}/#{label}"
+        end
       end
     service: |
       run [opt_bin/"distill", "watch"]
