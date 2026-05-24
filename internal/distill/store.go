@@ -3,7 +3,6 @@ package distill
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 )
 
@@ -141,13 +140,6 @@ func (s store) withLock(fn func() error) error {
 	return withFileLock(lockPath, fn)
 }
 
-func (s store) withNamedLock(name string, fn func() error) error {
-	if err := os.MkdirAll(s.paths.stateDir, 0o755); err != nil {
-		return err
-	}
-	return withFileLock(filepath.Join(s.paths.stateDir, lockFileName(name)+".lock"), fn)
-}
-
 func withFileLock(lockPath string, fn func() error) error {
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
@@ -159,19 +151,4 @@ func withFileLock(lockPath string, fn func() error) error {
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	return fn()
-}
-
-func lockFileName(name string) string {
-	var b strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('_')
-	}
-	if b.Len() == 0 {
-		return "lock"
-	}
-	return b.String()
 }

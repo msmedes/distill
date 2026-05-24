@@ -39,16 +39,19 @@ type extractionResult struct {
 }
 
 type extractedObservation struct {
-	Claim            string          `json:"claim"`
-	Type             observationType `json:"type"`
-	EvidenceTurnRefs []string        `json:"evidence_turn_refs"`
-	EvidenceQuote    string          `json:"evidence_quote"`
+	Claim            string           `json:"claim"`
+	Type             observationType  `json:"type"`
+	Scope            observationScope `json:"scope"`
+	ProjectCWD       string           `json:"project_cwd,omitempty"`
+	EvidenceTurnRefs []string         `json:"evidence_turn_refs"`
+	EvidenceQuote    string           `json:"evidence_quote"`
 }
 
 type extractedReinforce struct {
-	ObsID            string   `json:"obs_id"`
-	EvidenceTurnRefs []string `json:"evidence_turn_refs"`
-	EvidenceQuote    string   `json:"evidence_quote"`
+	ObsID            string           `json:"obs_id"`
+	Scope            observationScope `json:"scope,omitempty"`
+	EvidenceTurnRefs []string         `json:"evidence_turn_refs"`
+	EvidenceQuote    string           `json:"evidence_quote"`
 }
 
 type extractedContradict struct {
@@ -194,7 +197,7 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 		return fmt.Errorf("reading observations: %w", err)
 	}
 
-	relevantExisting := relevantObservations(existing, rendered, opts.maxObservations)
+	relevantExisting := relevantObservations(existing, rendered, opts.maxObservations, s.cwd)
 	if len(relevantExisting) < len(existing) {
 		fmt.Printf("  prompt context: %d/%d observations selected\n", len(relevantExisting), len(existing))
 	}
@@ -310,9 +313,13 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		if !ok {
 			continue
 		}
+		if !observationMatchesSessionScope(*o, s.cwd) || (o.Scope == scopeUser && r.Scope == scopeProject) {
+			continue
+		}
 		o.Evidence = append(o.Evidence, evidence{
 			SessionID:  s.sessionID,
 			Product:    s.product,
+			ProjectCWD: s.cwd,
 			TurnRefs:   r.EvidenceTurnRefs,
 			Quote:      r.EvidenceQuote,
 			RecordedAt: now,
@@ -326,6 +333,9 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		if !ok {
 			continue
 		}
+		if !observationMatchesSessionScope(*o, s.cwd) {
+			continue
+		}
 		key := sessionStateKey(s.product, s.sessionID)
 		if !contains(o.ContradictedBy, key) && !contains(o.ContradictedBy, s.sessionID) {
 			o.ContradictedBy = append(o.ContradictedBy, key)
@@ -337,16 +347,20 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		if !validType(n.Type) || len(n.Claim) < 8 {
 			continue
 		}
+		scope := normalizeExtractedScope(n.Scope, n.ProjectCWD, s.cwd)
 		id := nextObservationID(out)
 		out = append(out, observation{
-			ID:        id,
-			Claim:     n.Claim,
-			Type:      n.Type,
-			FirstSeen: now,
-			LastSeen:  now,
+			ID:         id,
+			Claim:      n.Claim,
+			Type:       n.Type,
+			Scope:      scope.scope,
+			ProjectCWD: scope.projectCWD,
+			FirstSeen:  now,
+			LastSeen:   now,
 			Evidence: []evidence{{
 				SessionID:  s.sessionID,
 				Product:    s.product,
+				ProjectCWD: s.cwd,
 				TurnRefs:   n.EvidenceTurnRefs,
 				Quote:      n.EvidenceQuote,
 				RecordedAt: now,
@@ -360,6 +374,37 @@ func applyDeltas(existing []observation, result extractionResult, s sessionMeta)
 		dedupEvidence(&out[i])
 	}
 	return out
+}
+
+type extractedScope struct {
+	scope      observationScope
+	projectCWD string
+}
+
+func normalizeExtractedScope(scope observationScope, projectCWD, sessionCWD string) extractedScope {
+	if !validScope(scope) {
+		scope = scopeUser
+	}
+	modelProjectCWD := strings.TrimSpace(projectCWD)
+	projectCWD = strings.TrimSpace(sessionCWD)
+	if projectCWD == "" {
+		projectCWD = modelProjectCWD
+	}
+	if scope == scopeProject {
+		if projectCWD == "" {
+			return extractedScope{scope: scopeUser}
+		}
+		return extractedScope{scope: scopeProject, projectCWD: projectCWD}
+	}
+	return extractedScope{scope: scopeUser}
+}
+
+func observationMatchesSessionScope(o observation, sessionCWD string) bool {
+	normalizeObservation(&o)
+	if o.Scope == scopeProject {
+		return strings.TrimSpace(o.ProjectCWD) != "" && filepath.Clean(o.ProjectCWD) == filepath.Clean(strings.TrimSpace(sessionCWD))
+	}
+	return true
 }
 
 func printExtractSummary(r extractionResult) {
@@ -438,17 +483,23 @@ func hasExtractionSignalMarker(text string) bool {
 	return false
 }
 
-func relevantObservations(obs []observation, query string, max int) []observation {
-	if max <= 0 || len(obs) <= max {
-		return obs
+func relevantObservations(obs []observation, query string, max int, sessionCWD string) []observation {
+	scopeFiltered := make([]observation, 0, len(obs))
+	for _, o := range obs {
+		if observationMatchesSessionScope(o, sessionCWD) {
+			scopeFiltered = append(scopeFiltered, o)
+		}
+	}
+	if max <= 0 || len(scopeFiltered) <= max {
+		return scopeFiltered
 	}
 	queryTokens := tokenSet(query)
 	type scoredObservation struct {
 		observation observation
 		score       int
 	}
-	scored := make([]scoredObservation, 0, len(obs))
-	for _, o := range obs {
+	scored := make([]scoredObservation, 0, len(scopeFiltered))
+	for _, o := range scopeFiltered {
 		score := 0
 		for token := range tokenSet(o.Claim) {
 			if queryTokens[token] {

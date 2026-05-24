@@ -58,9 +58,100 @@ func TestRelevantObservationsUsesQueryOverlap(t *testing.T) {
 		{ID: "obs_3", Claim: "User asks for git hygiene before commits", EvidenceCount: 2},
 	}
 
-	got := relevantObservations(obs, "please use browser screenshots to verify the frontend", 1)
+	got := relevantObservations(obs, "please use browser screenshots to verify the frontend", 1, "")
 	if len(got) != 1 || got[0].ID != "obs_2" {
 		t.Fatalf("expected obs_2, got %#v", got)
+	}
+}
+
+func TestRelevantObservationsExcludesOtherProjectScopes(t *testing.T) {
+	obs := []observation{
+		{ID: "obs_user", Claim: "User prefers concise final answers", Scope: scopeUser},
+		{ID: "obs_here", Claim: "Project guidance belongs in local artifacts", Scope: scopeProject, ProjectCWD: "/work/distill"},
+		{ID: "obs_elsewhere", Claim: "Project guidance belongs in local artifacts", Scope: scopeProject, ProjectCWD: "/work/other"},
+	}
+
+	got := relevantObservations(obs, "project guidance local artifacts", 10, "/work/distill")
+
+	if len(got) != 2 {
+		t.Fatalf("expected user and matching project observations, got %#v", got)
+	}
+	for _, o := range got {
+		if o.ID == "obs_elsewhere" {
+			t.Fatalf("included observation from a different project: %#v", got)
+		}
+	}
+}
+
+func TestApplyDeltasPersistsProjectScopeAndEvidenceCWD(t *testing.T) {
+	got := applyDeltas(nil, extractionResult{
+		NewObservations: []extractedObservation{{
+			Claim:            "User wants distill guidance scoped to the project when corrections come from project work.",
+			Type:             typePreference,
+			Scope:            scopeProject,
+			EvidenceTurnRefs: []string{"turn 4"},
+			EvidenceQuote:    "scope it to the project",
+		}},
+	}, sessionMeta{product: productCodex, sessionID: "session-1", cwd: "/tmp/distill"})
+
+	if len(got) != 1 {
+		t.Fatalf("expected one observation, got %#v", got)
+	}
+	if got[0].Scope != scopeProject || got[0].ProjectCWD != "/tmp/distill" {
+		t.Fatalf("unexpected scope: %#v", got[0])
+	}
+	if got[0].Evidence[0].ProjectCWD != "/tmp/distill" {
+		t.Fatalf("expected evidence cwd, got %#v", got[0].Evidence[0])
+	}
+}
+
+func TestApplyDeltasDoesNotReinforceProjectObservationFromDifferentProject(t *testing.T) {
+	existing := []observation{{
+		ID:            "obs_0001",
+		Claim:         "Project-specific guidance belongs in project artifacts.",
+		Type:          typePreference,
+		Scope:         scopeProject,
+		ProjectCWD:    "/tmp/distill",
+		EvidenceCount: 1,
+		Evidence:      []evidence{{Quote: "original"}},
+		Status:        statusActive,
+	}}
+
+	got := applyDeltas(existing, extractionResult{
+		Reinforced: []extractedReinforce{{
+			ObsID:            "obs_0001",
+			Scope:            scopeProject,
+			EvidenceTurnRefs: []string{"turn 7"},
+			EvidenceQuote:    "same idea elsewhere",
+		}},
+	}, sessionMeta{product: productCodex, sessionID: "session-2", cwd: "/tmp/other"})
+
+	if got[0].EvidenceCount != 1 || len(got[0].Evidence) != 1 {
+		t.Fatalf("different project reinforced observation: %#v", got[0])
+	}
+}
+
+func TestApplyDeltasDoesNotContradictProjectObservationFromDifferentProject(t *testing.T) {
+	existing := []observation{{
+		ID:            "obs_0001",
+		Claim:         "Project-specific guidance belongs in project artifacts.",
+		Type:          typePreference,
+		Scope:         scopeProject,
+		ProjectCWD:    "/tmp/distill",
+		EvidenceCount: 1,
+		Evidence:      []evidence{{Quote: "original"}},
+		Status:        statusActive,
+	}}
+
+	got := applyDeltas(existing, extractionResult{
+		Contradicted: []extractedContradict{{
+			ObsID:       "obs_0001",
+			Explanation: "same idea contradicted elsewhere",
+		}},
+	}, sessionMeta{product: productCodex, sessionID: "session-2", cwd: "/tmp/other"})
+
+	if len(got[0].ContradictedBy) != 0 {
+		t.Fatalf("different project contradicted observation: %#v", got[0])
 	}
 }
 

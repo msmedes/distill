@@ -1,6 +1,6 @@
-# Rewrite always-on agent instructions
+# Rewrite agent instructions
 
-You are updating the user's always-on agent instruction file. This file is loaded directly into future agent sessions, so the result must read like intentional user-authored guidance, not like a tool export.
+You are updating an AGENTS.md-style instruction file. It may be user-scoped or project-scoped. This file is loaded directly into future agent sessions, so the result must read like intentional user-authored guidance, not like a tool export.
 
 ## Current file
 
@@ -12,6 +12,7 @@ You are updating the user's always-on agent instruction file. This file is loade
 
 - **Observation ID:** `{{OBS_ID}}`
 - **Type:** `{{OBS_TYPE}}`
+- **Scope:** `{{OBS_SCOPE}}`
 - **Claim:** {{OBS_CLAIM}}
 - **Evidence:**
 {{OBS_EVIDENCE}}
@@ -27,7 +28,7 @@ You are updating the user's always-on agent instruction file. This file is loade
 - Do not include provenance markers, observation IDs, timestamps, or "distill" labels in the markdown.
 - Do not duplicate an instruction that is already present; sharpen or merge the existing wording instead.
 - Keep the change as small as possible while making the instruction useful to future agents.
-- If the observation is too weak, redundant, or too situational for always-on guidance, return the current file unchanged.
+- If the observation is too weak, redundant, or inappropriate for this scoped instruction file, return the current file unchanged.
 
 ## Output
 

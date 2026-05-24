@@ -63,3 +63,34 @@ func TestAlwaysOnDestinationRoutesByPromotionMode(t *testing.T) {
 		t.Fatalf("expected unified path, got %s", got)
 	}
 }
+
+func TestPortableProjectDestinations(t *testing.T) {
+	prefs := preferences{
+		PromotionMode: promotionModeUnified,
+		AlwaysOnPath:  "/home/me/.agents/AGENTS.md",
+		SkillsDir:     "/home/me/.agents/skills",
+	}
+	obs := observation{
+		Scope:      scopeProject,
+		ProjectCWD: "/work/distill",
+	}
+
+	if got := prefs.agentsDestination(obs, ""); got != filepath.Join("/work/distill", "AGENTS.md") {
+		t.Fatalf("unexpected project AGENTS.md path: %s", got)
+	}
+	skillsDir, err := prefs.skillsDestination(obs, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join("/work/distill", ".agents", "skills"); skillsDir != want {
+		t.Fatalf("unexpected project skills dir: %s", skillsDir)
+	}
+
+	userSkillsDir, err := prefs.skillsDestination(obs, scopeUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if userSkillsDir != prefs.SkillsDir {
+		t.Fatalf("expected requested user scope to use user skills dir, got %s", userSkillsDir)
+	}
+}

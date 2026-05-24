@@ -61,7 +61,7 @@ func TestRewriteAlwaysOnInstructionsWritesModelOutput(t *testing.T) {
 	})
 	defer restore()
 
-	if err := rewriteAlwaysOnInstructions(nil, path, observation{ID: "obs_0007", Claim: "Prefer direct answers"}); err != nil {
+	if err := rewriteAlwaysOnInstructions(context.TODO(), path, observation{ID: "obs_0007", Claim: "Prefer direct answers"}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(path)

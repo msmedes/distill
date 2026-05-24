@@ -141,8 +141,8 @@
     <h2>promotion destinations</h2>
     <dl class="faq">
       <div>
-        <dt>What does always-on mean?</dt>
-        <dd>Always-on is your configured agent instruction file. Promote a short, stable preference there when you want it to apply in every future session.</dd>
+        <dt>What are instructions?</dt>
+        <dd>Instructions are AGENTS.md-style files. User-scoped observations write your configured user instructions; project-scoped observations write <code>&lt;project&gt;/AGENTS.md</code>.</dd>
       </div>
       <div>
         <dt>What is a skill?</dt>
@@ -150,7 +150,7 @@
       </div>
       <div>
         <dt>What is skills dir?</dt>
-        <dd>The skills directory is where distill writes generated skill folders. By default that is <code>~/.agents/skills/&lt;name&gt;/SKILL.md</code>.</dd>
+        <dd>The user skills directory is where distill writes user-scoped generated skill folders. Project-scoped skills write <code>&lt;project&gt;/.agents/skills/&lt;name&gt;/SKILL.md</code>.</dd>
       </div>
     </dl>
   </section>
@@ -158,7 +158,8 @@
   <section class="section">
     <h2>choosing a destination</h2>
     <ul class="rule-list">
-      <li>Use always-on for terse rules that should shape every agent session.</li>
+      <li>Use user instructions for terse rules that should shape every agent session.</li>
+      <li>Use project instructions for conventions learned from one repository.</li>
       <li>Use a skill for guidance that depends on a task, repo, tool, or workflow.</li>
       <li>Leave the observation active if the signal is plausible but not yet durable enough.</li>
       <li>Ignore an observation when it is wrong, stale, too noisy, or not worth preserving.</li>
@@ -167,7 +168,7 @@
 
   <section class="section">
     <h2>proposals</h2>
-    <p>Proposals are recommendations, not writes. The model can suggest that an observation belongs in always-on instructions or in a skill, but distill does not modify those files until you accept a proposal or use a promotion action.</p>
+    <p>Proposals are recommendations, not writes. The model can suggest artifact and scope, such as a project skill or user instructions, but distill does not modify those files until you accept a proposal or use a promotion action.</p>
     <p class="callout">Accepting a proposal is the commit point. Before that, the observation is just local curation data.</p>
   </section>
 
@@ -175,12 +176,16 @@
     <h2>what gets written</h2>
     <dl class="faq">
       <div>
-        <dt>Always-on promotion</dt>
-        <dd>distill asks Opus to integrate the observation into your configured instruction file, then shows a diff for you to review before committing.</dd>
+        <dt>Instruction promotion</dt>
+        <dd>distill asks Opus to integrate the observation into the scoped instruction file, then shows a diff for you to review before committing.</dd>
       </div>
       <div>
         <dt>Skill promotion</dt>
-        <dd>distill asks the model to turn the observation, evidence, and notes into a compact skill file, then writes it under the configured skills directory.</dd>
+        <dd>distill asks the model to turn the observation, evidence, and notes into a compact skill file, then writes it under the user or project portable skills directory.</dd>
+      </div>
+      <div>
+        <dt>Portable artifacts</dt>
+        <dd>distill writes predictable <code>AGENTS.md</code> and <code>.agents/skills</code> artifacts. If an agent runtime expects another path, symlink, copy, or configure that runtime separately.</dd>
       </div>
       <div>
         <dt>Source sessions</dt>

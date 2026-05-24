@@ -238,23 +238,6 @@ func decodeCodexTurn(line []byte) (transcriptTurn, bool) {
 	}, true
 }
 
-// renderTranscript formats turns for prompt injection with [turn N | role | uuid8] headers
-// so the extractor can cite specific turns.
-func renderTranscript(turns []transcriptTurn) string {
-	var b strings.Builder
-	for i, t := range turns {
-		if i > 0 {
-			b.WriteString("\n\n---\n\n")
-		}
-		uuidShort := t.uuid
-		if len(uuidShort) > 8 {
-			uuidShort = uuidShort[:8]
-		}
-		fmt.Fprintf(&b, "[turn %d | %s | %s]\n%s", i+1, t.role, uuidShort, t.text)
-	}
-	return b.String()
-}
-
 // renderExtractionTranscript formats user-authored turns for extraction and
 // includes a bounded preceding assistant turn when the user turn contains
 // correction/preference language. That gives the model enough local context to
@@ -389,6 +372,9 @@ func peekCwd(filePath string) string {
 			return entry.Cwd
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return ""
+	}
 	return ""
 }
 
@@ -417,6 +403,9 @@ func peekCodexMeta(filePath string) codexMeta {
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err == nil && entry.Type == "session_meta" {
 			return codexMeta{sessionID: entry.Payload.ID, cwd: entry.Payload.Cwd}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return codexMeta{}
 	}
 	return codexMeta{}
 }

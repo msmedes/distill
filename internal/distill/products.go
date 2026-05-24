@@ -23,10 +23,6 @@ func parseProduct(s string) (product, error) {
 	}
 }
 
-func validProduct(p product) bool {
-	return p == productClaude || p == productCodex
-}
-
 type productSource struct {
 	product         product
 	listSessions    func(paths) ([]sessionMeta, error)

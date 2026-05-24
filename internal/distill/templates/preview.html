@@ -253,6 +253,7 @@
     <form class="commit-form" method="POST" action="/obs/{{.ObservationID}}/{{.CommitAction}}">
       <input type="hidden" name="path" value="{{.CommitPath}}">
       <input type="hidden" name="base_hash" value="{{.CommitBaseHash}}">
+      <input type="hidden" name="scope" value="{{.CommitScope}}">
       <textarea name="output" hidden>{{.CommitOutput}}</textarea>
       <button>commit this</button>
     </form>

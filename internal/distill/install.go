@@ -84,7 +84,7 @@ func promptInstallPreferences(in io.Reader, out io.Writer, defaults preferences)
 		return preferences{}, fmt.Errorf("choose at least one product to watch")
 	}
 
-	unified, err := promptBool(reader, out, "Use one always-on instructions file at ~/.agents/AGENTS.md?", true)
+	unified, err := promptBool(reader, out, "Use one user-scoped instructions file at ~/.agents/AGENTS.md?", true)
 	if err != nil {
 		return preferences{}, err
 	}
@@ -313,12 +313,12 @@ func printInstallSummary(out io.Writer, prefs preferences) {
 	fmt.Fprintln(out, "saved distill preferences")
 	fmt.Fprintf(out, "  watch: %s\n", prefs.watchProduct())
 	if prefs.PromotionMode == promotionModeUnified {
-		fmt.Fprintf(out, "  always-on: %s\n", prefs.AlwaysOnPath)
+		fmt.Fprintf(out, "  user instructions: %s\n", prefs.AlwaysOnPath)
 	} else {
-		fmt.Fprintf(out, "  claude always-on: %s\n", prefs.ClaudeMDPath)
-		fmt.Fprintf(out, "  codex always-on:  %s\n", prefs.CodexAgentsPath)
+		fmt.Fprintf(out, "  claude user instructions: %s\n", prefs.ClaudeMDPath)
+		fmt.Fprintf(out, "  codex user instructions:  %s\n", prefs.CodexAgentsPath)
 	}
-	fmt.Fprintf(out, "  skills: %s\n", prefs.SkillsDir)
+	fmt.Fprintf(out, "  user skills: %s\n", prefs.SkillsDir)
 	if prefs.AutomaticWatch {
 		if runningFromHomebrew() {
 			fmt.Fprintln(out, "  automatic watch: Homebrew service")

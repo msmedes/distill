@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -109,6 +110,31 @@ func (s *server) loadTemplates() error {
 				out = append(out, p)
 			}
 			return out
+		},
+		"scopeLabel": func(o observation) string {
+			normalizeObservation(&o)
+			if o.Scope == scopeProject {
+				if o.ProjectCWD == "" {
+					return "project"
+				}
+				return "project: " + filepath.Base(o.ProjectCWD)
+			}
+			return "user"
+		},
+		"proposalLabel": func(p proposal) string {
+			normalizeProposal(&p, scopeUser)
+			scope := "user"
+			if p.Scope == scopeProject {
+				scope = "project"
+			}
+			switch p.Artifact {
+			case artifactSkill:
+				return scope + " skill proposal"
+			case artifactAgentsMD:
+				return scope + " instructions proposal"
+			default:
+				return scope + " proposal"
+			}
 		},
 	}
 	tmpl, err := template.New("observations.html").Funcs(funcs).
@@ -292,10 +318,11 @@ func (s *server) handleObsAction(w http.ResponseWriter, r *http.Request) {
 		s.renderPreview(w, r, preview)
 		return
 	case "accept-proposal":
-		kind := r.FormValue("kind")
+		artifact := normalizeProposalArtifact(r.FormValue("artifact"), r.FormValue("kind"))
+		scope := observationScope(r.FormValue("scope"))
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
-		preview, err := previewAcceptProposal(ctx, s.paths, id, kind, true)
+		preview, err := previewAcceptScopedProposal(ctx, s.paths, id, artifact, scope, true)
 		if err != nil {
 			log.Printf("preview action %s on %s failed: %v", action, id, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -304,11 +331,12 @@ func (s *server) handleObsAction(w http.ResponseWriter, r *http.Request) {
 		s.renderPreview(w, r, preview)
 		return
 	case "dismiss-proposal":
-		res, err = dismissProposal(s.paths, id, r.FormValue("kind"))
+		artifact := normalizeProposalArtifact(r.FormValue("artifact"), r.FormValue("kind"))
+		res, err = dismissScopedProposal(s.paths, id, artifact, observationScope(r.FormValue("scope")))
 	case "commit-promote-claude-md":
-		res, err = commitClaudeMDPreview(s.paths, id, r.FormValue("path"), r.FormValue("output"), r.FormValue("base_hash"))
+		res, err = commitClaudeMDPreviewWithScope(s.paths, id, r.FormValue("path"), r.FormValue("output"), r.FormValue("base_hash"), observationScope(r.FormValue("scope")))
 	case "commit-promote-skill":
-		res, err = commitSkillPreview(s.paths, id, r.FormValue("path"), r.FormValue("output"))
+		res, err = commitSkillPreviewWithScope(s.paths, id, r.FormValue("path"), r.FormValue("output"), observationScope(r.FormValue("scope")))
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 		return

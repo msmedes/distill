@@ -14,12 +14,18 @@ import (
 )
 
 type observationType string
+type observationScope string
 
 const (
 	typePreference observationType = "preference"
 	typeWorkflow   observationType = "workflow"
 	typeFriction   observationType = "friction"
 	typeToolUse    observationType = "tool-use"
+)
+
+const (
+	scopeUser    observationScope = "user"
+	scopeProject observationScope = "project"
 )
 
 func validType(t observationType) bool {
@@ -30,9 +36,18 @@ func validType(t observationType) bool {
 	return false
 }
 
+func validScope(s observationScope) bool {
+	switch s {
+	case scopeUser, scopeProject:
+		return true
+	}
+	return false
+}
+
 type evidence struct {
 	SessionID  string   `json:"session_id"`
 	Product    product  `json:"product,omitempty"`
+	ProjectCWD string   `json:"project_cwd,omitempty"`
 	TurnRefs   []string `json:"turn_refs"`
 	Quote      string   `json:"quote,omitempty"`
 	RecordedAt string   `json:"recorded_at"`
@@ -47,13 +62,20 @@ type note struct {
 // promoted somewhere. Lives on the observation until the user accepts or
 // dismisses it.
 type proposal struct {
-	Kind      string `json:"kind"` // "skill" | "claude-md"
-	At        string `json:"at"`
-	Reasoning string `json:"reasoning"`
+	// Kind is the legacy JSON field. New records use Artifact, but Kind stays
+	// readable so older observations do not lose pending proposals.
+	Kind      string           `json:"kind,omitempty"`
+	Artifact  string           `json:"artifact,omitempty"` // "skill" | "agents-md"
+	Scope     observationScope `json:"scope,omitempty"`
+	At        string           `json:"at"`
+	Reasoning string           `json:"reasoning"`
 }
 
 const (
-	proposalSkill    = "skill"
+	artifactSkill    = "skill"
+	artifactAgentsMD = "agents-md"
+
+	proposalSkill    = artifactSkill
 	proposalClaudeMD = "claude-md"
 )
 
@@ -67,14 +89,16 @@ const (
 )
 
 type observation struct {
-	ID             string          `json:"id"`
-	Claim          string          `json:"claim"`
-	Type           observationType `json:"type"`
-	FirstSeen      string          `json:"first_seen"`
-	LastSeen       string          `json:"last_seen"`
-	Evidence       []evidence      `json:"evidence"`
-	EvidenceCount  int             `json:"evidence_count"`
-	ContradictedBy []string        `json:"contradicted_by"`
+	ID             string           `json:"id"`
+	Claim          string           `json:"claim"`
+	Type           observationType  `json:"type"`
+	Scope          observationScope `json:"scope"`
+	ProjectCWD     string           `json:"project_cwd,omitempty"`
+	FirstSeen      string           `json:"first_seen"`
+	LastSeen       string           `json:"last_seen"`
+	Evidence       []evidence       `json:"evidence"`
+	EvidenceCount  int              `json:"evidence_count"`
+	ContradictedBy []string         `json:"contradicted_by"`
 
 	// User-curation state. Defaulted in readObservations so older records
 	// still load cleanly.
@@ -162,8 +186,38 @@ func normalizeObservation(o *observation) {
 	if o.Proposals == nil {
 		o.Proposals = []proposal{}
 	}
+	if !validScope(o.Scope) {
+		o.Scope = scopeUser
+	}
+	if o.Scope != scopeProject {
+		o.ProjectCWD = ""
+	}
+	for i := range o.Proposals {
+		normalizeProposal(&o.Proposals[i], o.Scope)
+	}
 	if o.Status == "" {
 		o.Status = statusActive
+	}
+}
+
+func normalizeProposal(p *proposal, fallbackScope observationScope) {
+	if p.Artifact == "" {
+		switch p.Kind {
+		case proposalClaudeMD:
+			p.Artifact = artifactAgentsMD
+		case proposalSkill:
+			p.Artifact = artifactSkill
+		}
+	}
+	if p.Kind == "" {
+		p.Kind = p.Artifact
+	}
+	if !validScope(p.Scope) {
+		if validScope(fallbackScope) {
+			p.Scope = fallbackScope
+		} else {
+			p.Scope = scopeUser
+		}
 	}
 }
 
@@ -222,7 +276,11 @@ func renderObservationsForPrompt(obs []observation) string {
 	})
 	var b strings.Builder
 	for _, o := range sorted {
-		fmt.Fprintf(&b, "- %s [%s | count=%d]: %s\n", o.ID, o.Type, o.EvidenceCount, o.Claim)
+		scope := string(o.Scope)
+		if o.Scope == scopeProject && o.ProjectCWD != "" {
+			scope += ":" + o.ProjectCWD
+		}
+		fmt.Fprintf(&b, "- %s [%s | scope=%s | count=%d]: %s\n", o.ID, o.Type, scope, o.EvidenceCount, o.Claim)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

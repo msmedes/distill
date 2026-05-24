@@ -11,16 +11,19 @@ import (
 
 type proposalsResponse struct {
 	Proposals []struct {
-		ObsID     string `json:"obs_id"`
-		Kind      string `json:"kind"`
-		Reasoning string `json:"reasoning"`
+		ObsID     string           `json:"obs_id"`
+		Kind      string           `json:"kind,omitempty"`
+		Artifact  string           `json:"artifact,omitempty"`
+		Scope     observationScope `json:"scope,omitempty"`
+		Reasoning string           `json:"reasoning"`
 	} `json:"proposals"`
 }
 
 type synthesizedProposal struct {
-	ObsID     string `json:"obs_id"`
-	Kind      string `json:"kind"`
-	Reasoning string `json:"reasoning"`
+	ObsID     string           `json:"obs_id"`
+	Artifact  string           `json:"artifact"`
+	Scope     observationScope `json:"scope"`
+	Reasoning string           `json:"reasoning"`
 }
 
 func runSynthesize(args []string) error {
@@ -79,11 +82,13 @@ func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, erro
 			if obs[i].Status != statusActive {
 				continue
 			}
-			if hasProposalOfKind(obs[i].Proposals, prop.Kind) {
+			if hasProposal(obs[i].Proposals, prop.Artifact, prop.Scope) {
 				continue
 			}
 			obs[i].Proposals = append(obs[i].Proposals, proposal{
-				Kind:      prop.Kind,
+				Kind:      prop.Artifact,
+				Artifact:  prop.Artifact,
+				Scope:     prop.Scope,
 				At:        now,
 				Reasoning: strings.TrimSpace(prop.Reasoning),
 			})
@@ -130,16 +135,25 @@ func generateSynthesizedProposals(ctx context.Context, p paths, model modelID) (
 	}
 	var out []synthesizedProposal
 	for _, prop := range resp.Proposals {
-		if prop.Kind != proposalSkill && prop.Kind != proposalClaudeMD {
+		artifact := normalizeProposalArtifact(prop.Artifact, prop.Kind)
+		if artifact != artifactSkill && artifact != artifactAgentsMD {
 			continue
 		}
 		o, ok := byID[prop.ObsID]
-		if !ok || o.Status != statusActive || hasProposalOfKind(o.Proposals, prop.Kind) {
+		if !ok || o.Status != statusActive {
+			continue
+		}
+		scope := prop.Scope
+		if !validScope(scope) {
+			scope = o.Scope
+		}
+		if !validProposalScope(o, scope) || hasProposal(o.Proposals, artifact, scope) {
 			continue
 		}
 		out = append(out, synthesizedProposal{
 			ObsID:     prop.ObsID,
-			Kind:      prop.Kind,
+			Artifact:  artifact,
+			Scope:     scope,
 			Reasoning: strings.TrimSpace(prop.Reasoning),
 		})
 	}
@@ -156,13 +170,38 @@ func activeObservations(obs []observation) []observation {
 	return out
 }
 
-func hasProposalOfKind(props []proposal, kind string) bool {
+func hasProposal(props []proposal, artifact string, scope observationScope) bool {
 	for _, p := range props {
-		if p.Kind == kind {
+		normalizeProposal(&p, scope)
+		if p.Artifact == artifact && p.Scope == scope {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizeProposalArtifact(artifact, kind string) string {
+	if artifact != "" {
+		return artifact
+	}
+	switch kind {
+	case proposalClaudeMD:
+		return artifactAgentsMD
+	case proposalSkill:
+		return artifactSkill
+	default:
+		return kind
+	}
+}
+
+func validProposalScope(o observation, scope observationScope) bool {
+	if !validScope(scope) {
+		return false
+	}
+	if scope == scopeProject {
+		return strings.TrimSpace(o.ProjectCWD) != ""
+	}
+	return true
 }
 
 func buildSynthesizePrompt(obs []observation) (string, error) {
@@ -172,7 +211,11 @@ func buildSynthesizePrompt(obs []observation) (string, error) {
 	}
 	var b strings.Builder
 	for _, o := range obs {
-		fmt.Fprintf(&b, "## %s [%s] count=%d\n", o.ID, o.Type, o.EvidenceCount)
+		scope := string(o.Scope)
+		if o.Scope == scopeProject && o.ProjectCWD != "" {
+			scope += ":" + o.ProjectCWD
+		}
+		fmt.Fprintf(&b, "## %s [%s] scope=%s count=%d\n", o.ID, o.Type, scope, o.EvidenceCount)
 		fmt.Fprintf(&b, "claim: %s\n", o.Claim)
 		if len(o.ContradictedBy) > 0 {
 			fmt.Fprintf(&b, "contradicted by %d session(s)\n", len(o.ContradictedBy))

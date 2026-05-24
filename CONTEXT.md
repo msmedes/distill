@@ -1,19 +1,19 @@
 # distill
 
-distill is a Go CLI that turns Claude Code and Codex session transcripts into a curated model of the developer — what they prefer, how they work, what they push back on — and lets them promote those signals into skills or always-on instruction entries via a local web UI.
+distill is a Go CLI that turns Claude Code and Codex session transcripts into a curated model of the developer — what they prefer, how they work, what they push back on — and lets them promote those signals into portable user- or project-scoped skills and instructions via a local web UI.
 
-The data flow is: **Session → Extract → Observation → (Synthesize → Proposal →) Promotion → Skill | Always-on instructions**
+The data flow is: **Session → Extract → Observation → (Synthesize → Proposal →) Promotion → Skill | Instructions**
 
 For ADRs covering the load-bearing decisions, see [`_meta/adr/`](./_meta/adr).
 
 ## Language
 
 **Observation**:
-The atomic unit. A claim about the user — a preference, workflow, friction point, or tool-use pattern — backed by evidence quotes from sessions. Stored as JSONL at `~/.distill/observations.jsonl`.
+The atomic unit. A claim about the user — a preference, workflow, friction point, or tool-use pattern — backed by evidence quotes from sessions. Observations carry scope (`user` or `project`) so project-specific correction loops do not automatically become global guidance. Stored as JSONL at `~/.distill/observations.jsonl`.
 _Avoid_: skill (a skill is a promoted observation, not the observation itself), pattern, insight.
 
 **Evidence**:
-A quote from a specific session turn that supports an observation. Multiple evidence entries accumulate as the same observation is reinforced across sessions. Evidence records carry their source product (`claude` or `codex`) so the UI can show where the signal came from.
+A quote from a specific session turn that supports an observation. Multiple evidence entries accumulate as the same observation is reinforced across sessions. Evidence records carry their source product (`claude` or `codex`) and project cwd so the UI and synthesis pass can distinguish user-level from project-level signal.
 _Avoid_: example, citation.
 
 **Session**:
@@ -29,23 +29,23 @@ The automatic ingestion loop. Polls Claude Code and Codex transcript directories
 _Avoid_: hook, daemon (unless discussing process supervision).
 
 **Synthesize**:
-The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to skills or always-on instructions. Expensive (Sonnet), runs only when the user asks.
+The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to portable skills or instructions at user or project scope. Expensive (Sonnet), runs only when the user asks.
 _Avoid_: review, audit.
 
 **Proposal**:
-An LLM-attached suggestion on an observation that recommends promotion to a specific target (`skill` or `claude-md`). Lives on the observation until the user accepts or dismisses.
+An LLM-attached suggestion on an observation that recommends a promotion artifact (`skill` or `agents-md`) and scope (`user` or `project`). Lives on the observation until the user accepts or dismisses.
 _Avoid_: recommendation, suggestion (these are too general).
 
 **Promotion**:
-The act of moving an observation's content into a target file — a new `SKILL.md` or an Opus-rewritten configured always-on instructions file. Always user-confirmed via preview and commit; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md).
+The act of moving an observation's content into a target file — a new `SKILL.md` or an Opus-rewritten instructions file. Always user-confirmed via preview and commit; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md) and [ADR 0007](./_meta/adr/0007-portable-scoped-artifacts.md).
 _Avoid_: graduation, conversion.
 
 **Skill**:
-A skill file at the configured skills directory, default `~/.agents/skills/<name>/SKILL.md` — frontmatter (`name`, `description`) plus a markdown body. Loaded into agent context when its description matches the task. Situational rules.
-_Avoid_: rule (always-on entries are more rule-shaped; skills are situational).
+A skill file at either the configured user skills directory, default `~/.agents/skills/<name>/SKILL.md`, or the portable project path `<project>/.agents/skills/<name>/SKILL.md` — frontmatter (`name`, `description`) plus a markdown body. Loaded into agent context when its description matches the task. Situational rules.
+_Avoid_: rule (instruction entries are more rule-shaped; skills are situational).
 
-**Always-on instructions**:
-The user's persistent agent instruction file. distill defaults to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). For always-on promotion, distill asks Opus to rewrite the configured file so the observation fits the existing structure and voice; there is no distill-managed section. Stable, always-on preferences.
+**Instructions**:
+An AGENTS.md-style instruction file. User-scoped instructions default to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). Project-scoped instructions write `<project>/AGENTS.md`. For instruction promotion, distill asks Opus to rewrite the destination file so the observation fits the existing structure and voice; there is no distill-managed section.
 _Avoid_: settings, config, profile.
 
 **Status**:
@@ -72,14 +72,14 @@ A maintenance command that dedups evidence entries within each observation by qu
 - An **Observation** has many **Evidence** entries; duplicate quotes are deduplicated at write time because Claude Code creates a fresh session file on every `/resume`, copying earlier turns verbatim.
 - An **Observation** also has a **Status**, an optional list of **Notes**, and an optional list of **Proposals**.
 - **Synthesize** reads all `active` observations and attaches **Proposals** to a subset; it does not modify any other field.
-- Accepting a **Proposal** opens a promotion preview. For a **Skill**, the preview contains the generated `SKILL.md` informed by claim + evidence + notes. For always-on instructions, Opus rewrites the complete configured instruction file and the user reviews the diff before commit.
+- Accepting a **Proposal** opens a promotion preview. For a **Skill**, the preview contains the generated `SKILL.md` informed by claim + evidence + notes. For instructions, Opus rewrites the complete destination file and the user reviews the diff before commit.
 - After promotion, the observation's status changes; it stays in the store with a `promoted_to` path but disappears from the default view.
 - Ignoring an observation sets `status = ignored`; it is hidden in the default view but can be unignored later.
 
 ## Example dialogue
 
-> **Dev:** "I see `obs_0003` has `count=7` and an always-on proposal. What does count mean here?"
-> **Domain expert:** "Seven distinct pieces of Evidence — quotes from across sessions — back that Observation. The Proposal is saying it's stable enough to belong in always-on instructions rather than a situational Skill."
+> **Dev:** "I see `obs_0003` has `count=7` and a user instructions proposal. What does count mean here?"
+> **Domain expert:** "Seven distinct pieces of Evidence — quotes from across sessions — back that Observation. The Proposal is saying it's stable enough to belong in user-scoped instructions rather than a situational Skill."
 >
 > **Dev:** "Why isn't it auto-promoted then?"
 > **Domain expert:** "Promotion is always user-confirmed. Synthesize proposes; the user accepts or dismisses. The cost of a bad skill polluting every future agent context is too high to automate."

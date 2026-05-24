@@ -33,6 +33,7 @@ type actionPreview struct {
 	CanCommit      bool
 	CommitAction   string
 	CommitKind     string
+	CommitScope    observationScope
 	CommitOutput   string
 	CommitPath     string
 	CommitBaseHash string
@@ -54,10 +55,11 @@ func findObservation(obs []observation, id string) (int, bool) {
 	return -1, false
 }
 
-func removeProposalsOfKind(proposals []proposal, kind string) []proposal {
+func removeProposals(proposals []proposal, artifact string, scope observationScope) []proposal {
 	kept := proposals[:0]
 	for _, pr := range proposals {
-		if pr.Kind == kind {
+		normalizeProposal(&pr, scopeUser)
+		if pr.Artifact == artifact && (scope == "" || pr.Scope == scope) {
 			continue
 		}
 		kept = append(kept, pr)
@@ -68,36 +70,23 @@ func removeProposalsOfKind(proposals []proposal, kind string) []proposal {
 	return kept
 }
 
-// acceptProposal accepts the named proposal on an observation by firing the
-// corresponding promote action, then clears all pending proposals on that
-// observation (acceptance retires the rest implicitly).
-func acceptProposal(ctx context.Context, p paths, id, kind string) (actionResult, error) {
-	switch kind {
-	case proposalSkill:
-		return promoteToSkill(ctx, p, id)
-	case proposalClaudeMD:
-		return promoteToClaudeMD(p, id)
+func previewAcceptScopedProposal(ctx context.Context, p paths, id, artifact string, scope observationScope, canCommit bool) (actionPreview, error) {
+	switch artifact {
+	case artifactSkill:
+		return previewPromoteToSkillWithScope(ctx, p, id, scope, canCommit)
+	case artifactAgentsMD:
+		return previewPromoteToAgentsMDWithScope(ctx, p, id, scope, canCommit)
 	}
-	return actionResult{}, fmt.Errorf("unknown proposal kind: %s", kind)
+	return actionPreview{}, fmt.Errorf("unknown proposal artifact: %s", artifact)
 }
 
-func previewAcceptProposal(ctx context.Context, p paths, id, kind string, canCommit bool) (actionPreview, error) {
-	switch kind {
-	case proposalSkill:
-		return previewPromoteToSkill(ctx, p, id, canCommit)
-	case proposalClaudeMD:
-		return previewPromoteToClaudeMD(ctx, p, id, canCommit)
-	}
-	return actionPreview{}, fmt.Errorf("unknown proposal kind: %s", kind)
-}
-
-func dismissProposal(p paths, id, kind string) (actionResult, error) {
+func dismissScopedProposal(p paths, id, artifact string, scope observationScope) (actionResult, error) {
 	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
 		i, ok := findObservation(obs, id)
 		if !ok {
 			return nil, fmt.Errorf("observation %s not found", id)
 		}
-		obs[i].Proposals = removeProposalsOfKind(obs[i].Proposals, kind)
+		obs[i].Proposals = removeProposals(obs[i].Proposals, artifact, scope)
 		return obs, nil
 	}); err != nil {
 		return actionResult{}, err
@@ -144,37 +133,11 @@ func addNote(p paths, id, text string) (actionResult, error) {
 	return actionResult{OK: true, Message: "noted"}, nil
 }
 
-func promoteToClaudeMD(p paths, id string) (actionResult, error) {
-	prefs, err := readPreferences(p)
-	if err != nil {
-		return actionResult{}, err
-	}
-	alwaysOnPath := prefs.alwaysOnDestination(observation{})
-
-	if err := newStore(p).updateObservations(func(obs []observation) ([]observation, error) {
-		i, ok := findObservation(obs, id)
-		if !ok {
-			return nil, fmt.Errorf("observation %s not found", id)
-		}
-		alwaysOnPath = prefs.alwaysOnDestination(obs[i])
-		if obs[i].Status == statusPromotedClaudeMD && obs[i].PromotedTo == alwaysOnPath {
-			obs[i].Proposals = []proposal{}
-			return obs, nil
-		}
-		if err := rewriteAlwaysOnInstructions(nil, alwaysOnPath, obs[i]); err != nil {
-			return nil, err
-		}
-		obs[i].Status = statusPromotedClaudeMD
-		obs[i].PromotedTo = alwaysOnPath
-		obs[i].Proposals = []proposal{}
-		return obs, nil
-	}); err != nil {
-		return actionResult{}, err
-	}
-	return actionResult{OK: true, Message: "added to always-on instructions", PromotedTo: alwaysOnPath}, nil
+func previewPromoteToClaudeMD(ctx context.Context, p paths, id string, canCommit bool) (actionPreview, error) {
+	return previewPromoteToAgentsMDWithScope(ctx, p, id, "", canCommit)
 }
 
-func previewPromoteToClaudeMD(ctx context.Context, p paths, id string, canCommit bool) (actionPreview, error) {
+func previewPromoteToAgentsMDWithScope(ctx context.Context, p paths, id string, scope observationScope, canCommit bool) (actionPreview, error) {
 	prefs, err := readPreferences(p)
 	if err != nil {
 		return actionPreview{}, err
@@ -183,78 +146,50 @@ func previewPromoteToClaudeMD(ctx context.Context, p paths, id string, canCommit
 	if err != nil {
 		return actionPreview{}, err
 	}
-	alwaysOnPath := prefs.alwaysOnDestination(o)
-	body, err := os.ReadFile(alwaysOnPath)
+	target, err := prefs.promotionTarget(o, artifactAgentsMD, scope)
 	if err != nil {
-		return actionPreview{}, fmt.Errorf("reading always-on instructions (%s): %w", alwaysOnPath, err)
+		return actionPreview{}, err
 	}
-	updated, err := generateAlwaysOnInstructions(ctx, string(body), o)
+	promptObs := observationForPromotionTarget(o, target)
+	body, err := readFileOrEmpty(target.Path)
+	if err != nil {
+		return actionPreview{}, fmt.Errorf("reading instructions (%s): %w", target.Path, err)
+	}
+	updated, err := generateAlwaysOnInstructions(ctx, string(body), promptObs)
 	if err != nil {
 		return actionPreview{}, err
 	}
 	preview := actionPreview{
-		Title:         "preview: always-on promotion",
+		Title:         "preview: instructions promotion",
 		Action:        "promote-claude-md",
 		ObservationID: id,
-		Message:       "would rewrite the always-on instruction file to integrate this observation",
+		Message:       "would rewrite the scoped instruction file to integrate this observation",
 		Effects: []string{
-			alwaysOnPath + " would be written",
+			target.Path + " would be written",
 			"observations.jsonl would mark the observation as promoted-claude-md",
 			"pending proposals on the observation would be cleared",
 		},
 		DiffLabel:   "write diff",
 		Diff:        renderLineDiff(string(body), updated),
-		OutputLabel: "resulting always-on file",
+		OutputLabel: "resulting instructions file",
 		Output:      updated,
 	}
 	if canCommit {
 		preview.CanCommit = true
 		preview.CommitAction = "commit-promote-claude-md"
 		preview.CommitOutput = updated
-		preview.CommitPath = alwaysOnPath
+		preview.CommitPath = target.Path
 		preview.CommitBaseHash = sha256Hex(body)
+		preview.CommitScope = target.Scope
 	}
 	return preview, nil
 }
 
-func promoteToSkill(ctx context.Context, p paths, id string) (actionResult, error) {
-	st := newStore(p)
-	var result actionResult
-	err := st.withNamedLock("promote-skill-"+id, func() error {
-		o, err := promotableObservation(st, id)
-		if err != nil {
-			return err
-		}
-		if o.Status == statusPromotedToSkill && o.PromotedTo != "" {
-			result = actionResult{OK: true, Message: "skill extracted", PromotedTo: o.PromotedTo}
-			return nil
-		}
-
-		gen, err := generateSkill(ctx, o)
-		if err != nil {
-			return fmt.Errorf("generating skill: %w", err)
-		}
-
-		prefs, err := readPreferences(p)
-		if err != nil {
-			return err
-		}
-		skillPath, err := writeSkillFile(prefs.SkillsDir, gen)
-		if err != nil {
-			return fmt.Errorf("writing skill: %w", err)
-		}
-
-		if err := finalizeSkillPromotion(st, id, skillPath); err != nil {
-			_ = os.Remove(skillPath)
-			return err
-		}
-		result = actionResult{OK: true, Message: "skill extracted", PromotedTo: skillPath}
-		return nil
-	})
-	return result, err
+func previewPromoteToSkill(ctx context.Context, p paths, id string, canCommit bool) (actionPreview, error) {
+	return previewPromoteToSkillWithScope(ctx, p, id, "", canCommit)
 }
 
-func previewPromoteToSkill(ctx context.Context, p paths, id string, canCommit bool) (actionPreview, error) {
+func previewPromoteToSkillWithScope(ctx context.Context, p paths, id string, scope observationScope, canCommit bool) (actionPreview, error) {
 	o, err := promotableObservation(newStore(p), id)
 	if err != nil {
 		return actionPreview{}, err
@@ -270,15 +205,19 @@ func previewPromoteToSkill(ctx context.Context, p paths, id string, canCommit bo
 			Output:        o.PromotedTo,
 		}, nil
 	}
-	gen, err := generateSkill(ctx, o)
-	if err != nil {
-		return actionPreview{}, fmt.Errorf("generating skill: %w", err)
-	}
 	prefs, err := readPreferences(p)
 	if err != nil {
 		return actionPreview{}, err
 	}
-	skillPath := filepath.Join(prefs.SkillsDir, gen.Name, "SKILL.md")
+	target, err := prefs.promotionTarget(o, artifactSkill, scope)
+	if err != nil {
+		return actionPreview{}, err
+	}
+	gen, err := generateSkill(ctx, observationForPromotionTarget(o, target))
+	if err != nil {
+		return actionPreview{}, fmt.Errorf("generating skill: %w", err)
+	}
+	skillPath := filepath.Join(target.Path, gen.Name, "SKILL.md")
 	if _, err := os.Stat(skillPath); err == nil {
 		return actionPreview{}, fmt.Errorf("skill %q already exists at %s — rename or delete first", gen.Name, skillPath)
 	} else if !os.IsNotExist(err) {
@@ -305,6 +244,7 @@ func previewPromoteToSkill(ctx context.Context, p paths, id string, canCommit bo
 		preview.CommitAction = "commit-promote-skill"
 		preview.CommitOutput = output
 		preview.CommitPath = skillPath
+		preview.CommitScope = target.Scope
 	}
 	return preview, nil
 }
@@ -351,7 +291,7 @@ func finalizeSkillPromotion(st store, id, skillPath string) error {
 	})
 }
 
-func commitClaudeMDPreview(p paths, id, path, output, baseHash string) (actionResult, error) {
+func commitClaudeMDPreviewWithScope(p paths, id, path, output, baseHash string, scope observationScope) (actionResult, error) {
 	st := newStore(p)
 	prefs, err := readPreferences(p)
 	if err != nil {
@@ -366,16 +306,22 @@ func commitClaudeMDPreview(p paths, id, path, output, baseHash string) (actionRe
 		if obs[i].Status != statusActive {
 			return nil, fmt.Errorf("observation %s is no longer active", id)
 		}
-		expectedPath := prefs.alwaysOnDestination(obs[i])
-		if filepath.Clean(path) != filepath.Clean(expectedPath) {
-			return nil, fmt.Errorf("commit path %s does not match configured always-on destination %s", path, expectedPath)
-		}
-		current, err := os.ReadFile(path)
+		target, err := prefs.promotionTarget(obs[i], artifactAgentsMD, scope)
 		if err != nil {
-			return nil, fmt.Errorf("reading always-on instructions (%s): %w", path, err)
+			return nil, err
+		}
+		if filepath.Clean(path) != filepath.Clean(target.Path) {
+			return nil, fmt.Errorf("commit path %s does not match configured instruction destination %s", path, target.Path)
+		}
+		current, err := readFileOrEmpty(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading instructions (%s): %w", path, err)
 		}
 		if sha256Hex(current) != baseHash {
-			return nil, fmt.Errorf("always-on instructions changed since preview; regenerate the preview")
+			return nil, fmt.Errorf("instructions changed since preview; regenerate the preview")
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
 		}
 		if err := os.WriteFile(path, []byte(output), 0o644); err != nil {
 			return nil, err
@@ -383,20 +329,28 @@ func commitClaudeMDPreview(p paths, id, path, output, baseHash string) (actionRe
 		obs[i].Status = statusPromotedClaudeMD
 		obs[i].PromotedTo = path
 		obs[i].Proposals = []proposal{}
-		result = actionResult{OK: true, Message: "added to always-on instructions", PromotedTo: path}
+		result = actionResult{OK: true, Message: "added to instructions", PromotedTo: path}
 		return obs, nil
 	})
 	return result, err
 }
 
-func commitSkillPreview(p paths, id, skillPath, output string) (actionResult, error) {
+func commitSkillPreviewWithScope(p paths, id, skillPath, output string, scope observationScope) (actionResult, error) {
 	st := newStore(p)
 	prefs, err := readPreferences(p)
 	if err != nil {
 		return actionResult{}, err
 	}
-	if filepath.Base(skillPath) != "SKILL.md" || !pathWithinDir(skillPath, prefs.SkillsDir) {
-		return actionResult{}, fmt.Errorf("skill commit path must be a SKILL.md under %s: %s", prefs.SkillsDir, skillPath)
+	o, err := observationByID(st, id)
+	if err != nil {
+		return actionResult{}, err
+	}
+	target, err := prefs.promotionTarget(o, artifactSkill, scope)
+	if err != nil {
+		return actionResult{}, err
+	}
+	if filepath.Base(skillPath) != "SKILL.md" || !pathWithinDir(skillPath, target.Path) {
+		return actionResult{}, fmt.Errorf("skill commit path must be a SKILL.md under %s: %s", target.Path, skillPath)
 	}
 	if _, err := os.Stat(skillPath); err == nil {
 		return actionResult{}, fmt.Errorf("skill already exists at %s — rename or delete first", skillPath)
@@ -489,13 +443,52 @@ func pathWithinDir(path, dir string) bool {
 	return rel != "." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".."
 }
 
-func rewriteAlwaysOnInstructions(ctx context.Context, path string, o observation) error {
+func readFileOrEmpty(path string) ([]byte, error) {
 	body, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return []byte{}, nil
+	}
+	return body, err
+}
+
+func resolvedPromotionScope(o observation, requested observationScope) observationScope {
+	if validScope(requested) {
+		return requested
+	}
+	normalizeObservation(&o)
+	return o.Scope
+}
+
+func observationForPromotionTarget(o observation, target promotionTarget) observation {
+	normalizeObservation(&o)
+	o.Scope = target.Scope
+	if target.Scope != scopeProject {
+		o.ProjectCWD = ""
+	}
+	return o
+}
+
+func observationScopeText(o observation) string {
+	normalizeObservation(&o)
+	if o.Scope == scopeProject {
+		if o.ProjectCWD != "" {
+			return "project (" + o.ProjectCWD + ")"
+		}
+		return "project"
+	}
+	return "user"
+}
+
+func rewriteAlwaysOnInstructions(ctx context.Context, path string, o observation) error {
+	body, err := readFileOrEmpty(path)
 	if err != nil {
-		return fmt.Errorf("reading always-on instructions (%s): %w", path, err)
+		return fmt.Errorf("reading instructions (%s): %w", path, err)
 	}
 	updated, err := generateAlwaysOnInstructions(ctx, string(body), o)
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(path, []byte(updated), 0o644)
@@ -513,11 +506,11 @@ func generateAlwaysOnInstructionsWithClaude(ctx context.Context, current string,
 	}
 	raw, err := callClaude(ctx, modelOpus, prompt)
 	if err != nil {
-		return "", fmt.Errorf("generating always-on instructions: %w", err)
+		return "", fmt.Errorf("generating instructions: %w", err)
 	}
 	out := strings.TrimSpace(stripMarkdownFence(raw))
 	if out == "" {
-		return "", fmt.Errorf("model returned empty always-on instructions")
+		return "", fmt.Errorf("model returned empty instructions")
 	}
 	if !strings.HasSuffix(out, "\n") {
 		out += "\n"
@@ -532,8 +525,12 @@ func buildAlwaysOnPrompt(current string, o observation) (string, error) {
 	}
 	var evidenceText strings.Builder
 	for _, e := range o.Evidence {
-		fmt.Fprintf(&evidenceText, "- session %s, %s: %q\n",
-			shortID(e.SessionID), strings.Join(e.TurnRefs, ", "), e.Quote)
+		project := ""
+		if e.ProjectCWD != "" {
+			project = ", project " + e.ProjectCWD
+		}
+		fmt.Fprintf(&evidenceText, "- session %s%s, %s: %q\n",
+			shortID(e.SessionID), project, strings.Join(e.TurnRefs, ", "), e.Quote)
 	}
 	if evidenceText.Len() == 0 {
 		evidenceText.WriteString("(none)")
@@ -549,6 +546,7 @@ func buildAlwaysOnPrompt(current string, o observation) (string, error) {
 	out = strings.ReplaceAll(out, "{{CURRENT_ALWAYS_ON}}", strings.TrimRight(current, "\n"))
 	out = strings.ReplaceAll(out, "{{OBS_ID}}", o.ID)
 	out = strings.ReplaceAll(out, "{{OBS_TYPE}}", string(o.Type))
+	out = strings.ReplaceAll(out, "{{OBS_SCOPE}}", observationScopeText(o))
 	out = strings.ReplaceAll(out, "{{OBS_CLAIM}}", o.Claim)
 	out = strings.ReplaceAll(out, "{{OBS_EVIDENCE}}", strings.TrimRight(evidenceText.String(), "\n"))
 	out = strings.ReplaceAll(out, "{{OBS_NOTES}}", strings.TrimRight(notesText.String(), "\n"))
@@ -612,8 +610,12 @@ func buildSkillPrompt(o observation) (string, error) {
 	}
 	var evidenceText strings.Builder
 	for _, e := range o.Evidence {
-		fmt.Fprintf(&evidenceText, "- session %s, %s: %q\n",
-			shortID(e.SessionID), strings.Join(e.TurnRefs, ", "), e.Quote)
+		project := ""
+		if e.ProjectCWD != "" {
+			project = ", project " + e.ProjectCWD
+		}
+		fmt.Fprintf(&evidenceText, "- session %s%s, %s: %q\n",
+			shortID(e.SessionID), project, strings.Join(e.TurnRefs, ", "), e.Quote)
 	}
 	var notesText strings.Builder
 	for _, n := range o.Notes {
@@ -625,25 +627,11 @@ func buildSkillPrompt(o observation) (string, error) {
 	out := string(raw)
 	out = strings.ReplaceAll(out, "{{OBS_ID}}", o.ID)
 	out = strings.ReplaceAll(out, "{{OBS_TYPE}}", string(o.Type))
+	out = strings.ReplaceAll(out, "{{OBS_SCOPE}}", observationScopeText(o))
 	out = strings.ReplaceAll(out, "{{OBS_CLAIM}}", o.Claim)
 	out = strings.ReplaceAll(out, "{{OBS_EVIDENCE}}", strings.TrimRight(evidenceText.String(), "\n"))
 	out = strings.ReplaceAll(out, "{{OBS_NOTES}}", strings.TrimRight(notesText.String(), "\n"))
 	return out, nil
-}
-
-func writeSkillFile(skillsDir string, g generatedSkill) (string, error) {
-	dir := filepath.Join(skillsDir, g.Name)
-	skillPath := filepath.Join(dir, "SKILL.md")
-	if _, err := os.Stat(skillPath); err == nil {
-		return "", fmt.Errorf("skill %q already exists at %s — rename or delete first", g.Name, skillPath)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(skillPath, []byte(renderSkillMarkdown(g)), 0o644); err != nil {
-		return "", err
-	}
-	return skillPath, nil
 }
 
 func renderSkillMarkdown(g generatedSkill) string {

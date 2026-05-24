@@ -18,7 +18,8 @@ You are reading user-authored turns from a single coding-agent session between a
 ## What to suppress (do not emit observations about these)
 
 - **Task-specific content.** "User is working on a Tauri IPC bug" is not an observation; it's project context.
-- **Things already in always-on instructions.** If the user has already stated a preference there, don't re-extract it.
+- **Project context misclassified as user preference.** If a correction only applies to the current repository's workflow, conventions, file layout, or local agent instructions, it can be an observation, but it must be `project` scoped rather than `user` scoped.
+- **Things already in durable instructions.** If the user has already stated a preference there, don't re-extract it.
 - **Generic-to-all-users claims.** "User wants working code" — useless. The observation must differentiate this user from a generic user.
 - **Single weak inferences.** If the only evidence is "they did X once and didn't object," that's not enough. Let it sit until it reinforces.
 
@@ -36,6 +37,15 @@ Every observation, reinforcement, or contradiction must cite **specific turn num
 
 When local assistant context is present, use it only to understand what the user was correcting. Evidence quotes should come from the user's words unless the assistant quote is necessary to identify the corrected behavior.
 
+## Scope requirements
+
+Each new observation must include `scope`:
+
+- `user`: applies broadly across the developer's work.
+- `project`: applies to this project because the correction is rooted in this repository's conventions, workflows, files, tools, or agent instructions.
+
+Default narrowly. If evidence comes from one project and the user did not phrase it as a general preference, use `project`. Use `user` when the user explicitly states a general preference or the pattern is clearly independent of this repository. For project-scoped observations, set `project_cwd` to the session's project cwd.
+
 ## Output
 
 Output a single JSON object. **Default toward emitting nothing.** Most sessions should produce zero or one observation. Sessions full of corrections and explicit preferences might produce three or four. If a session is all task content with no taste signal, emit empty arrays — that is the correct output.
@@ -47,6 +57,8 @@ Output a single JSON object. **Default toward emitting nothing.** Most sessions 
     {
       "claim": "<one sentence stating the pattern, written in third person about the user>",
       "type": "<preference | workflow | friction | tool-use>",
+      "scope": "<user | project>",
+      "project_cwd": "<project cwd when scope is project; omit for user scope>",
       "evidence_turn_refs": ["turn 12", "turn 19"],
       "evidence_quote": "<short verbatim quote from the cited turns>"
     }
@@ -54,6 +66,7 @@ Output a single JSON object. **Default toward emitting nothing.** Most sessions 
   "reinforced": [
     {
       "obs_id": "<id from the existing list above>",
+      "scope": "<user | project; match the observation being reinforced>",
       "evidence_turn_refs": ["turn 47"],
       "evidence_quote": "<short verbatim quote>"
     }

@@ -2,7 +2,7 @@
 
 # distill
 
-Build a model of yourself — your preferences, workflows, friction points — from your Claude Code and Codex session history. Curate it through a local web UI. Promote the signal into skills or always-on instructions.
+Build a model of yourself — your preferences, workflows, friction points — from your Claude Code and Codex session history. Curate it through a local web UI. Promote the signal into portable user- or project-scoped skills and instructions.
 
 distill never autonomously writes to your agent artifacts. The LLM extracts and proposes; you accept or dismiss. Promotion destinations are configurable in the web UI.
 
@@ -46,7 +46,7 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 # 2. (Later) catch up on everything new since last time
 ./distill extract --new
 
-# 3. Ask the model to propose which observations should become skills / always-on entries
+# 3. Ask the model to propose which observations should become skills / instructions
 ./distill synthesize
 
 # 4. Open the curation UI
@@ -54,7 +54,7 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 # → http://127.0.0.1:7373
 ```
 
-In the UI, each observation has actions hidden behind a pencil toggle — **ignore**, **→ always-on**, **→ skill**, plus a free-text note input. Proposals appear as accent-colored banners with **accept** / **dismiss**. The `propose promotions` button at the right of the filter bar re-runs synthesis on demand.
+In the UI, each observation has actions hidden behind a pencil toggle — **ignore**, **→ instructions**, **→ skill**, plus a free-text note input. Proposals appear as accent-colored banners with **accept** / **dismiss**. The `propose promotions` button at the right of the filter bar re-runs synthesis on demand.
 
 ## Commands
 
@@ -125,10 +125,14 @@ distill never modifies source sessions.
 
 Promoted observations default to:
 
-- **Skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
-- **Always-on instructions:** Opus rewrites the configured instruction file to integrate the observation into the existing structure. You review the diff before committing; distill does not create a special managed section.
+- **User skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
+- **Project skills:** `<project>/.agents/skills/<name>/SKILL.md`
+- **User instructions:** Opus rewrites the configured user instruction file to integrate the observation into the existing structure.
+- **Project instructions:** Opus rewrites `<project>/AGENTS.md`.
 
-`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
+distill writes portable artifacts. It does not copy or symlink them into every agent runtime's native location; configure your agent to read the portable path when needed.
+
+`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether user-scoped instruction promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Project-scoped instruction promotions derive their destination from the session cwd. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
 
 For agents trying to answer how distill works from an installed binary, run:
 
@@ -162,7 +166,9 @@ Two passes, two cadences (see [ADR 0003](./_meta/adr/0003-two-cadence-pipeline.m
                                        │
                                        ▼
                           ~/.agents/skills/<name>/SKILL.md
-                          configured always-on file (Opus rewrite preview)
+                          <project>/.agents/skills/<name>/SKILL.md
+                          configured user instructions
+                          <project>/AGENTS.md
 ```
 
 ## Status

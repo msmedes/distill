@@ -133,7 +133,7 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 		return preferences{}, fmt.Errorf("CLAUDE.md path must be absolute: %s", prefs.ClaudeMDPath)
 	}
 	if !filepath.IsAbs(codexPath) {
-		return preferences{}, fmt.Errorf("Codex AGENTS.md path must be absolute: %s", prefs.CodexAgentsPath)
+		return preferences{}, fmt.Errorf("codex AGENTS.md path must be absolute: %s", prefs.CodexAgentsPath)
 	}
 	if !filepath.IsAbs(skillsDir) {
 		return preferences{}, fmt.Errorf("skills directory must be absolute: %s", prefs.SkillsDir)
@@ -159,6 +159,71 @@ func (p preferences) watchProduct() product {
 }
 
 func (p preferences) alwaysOnDestination(o observation) string {
+	target, err := p.promotionTarget(o, artifactAgentsMD, "")
+	if err != nil {
+		return p.AlwaysOnPath
+	}
+	return target.Path
+}
+
+func (p preferences) agentsDestination(o observation, requested observationScope) string {
+	target, err := p.promotionTarget(o, artifactAgentsMD, requested)
+	if err != nil {
+		return p.AlwaysOnPath
+	}
+	return target.Path
+}
+
+func (p preferences) skillsDestination(o observation, requested observationScope) (string, error) {
+	target, err := p.promotionTarget(o, artifactSkill, requested)
+	if err != nil {
+		return "", err
+	}
+	return target.Path, nil
+}
+
+type promotionTarget struct {
+	Artifact string
+	Scope    observationScope
+	Path     string
+}
+
+func (p preferences) promotionTarget(o observation, artifact string, requested observationScope) (promotionTarget, error) {
+	scope := resolvedPromotionScope(o, requested)
+	switch artifact {
+	case artifactAgentsMD:
+		if scope == scopeProject && strings.TrimSpace(o.ProjectCWD) == "" {
+			return promotionTarget{}, fmt.Errorf("project-scoped instructions require project cwd")
+		}
+		return promotionTarget{
+			Artifact: artifact,
+			Scope:    scope,
+			Path:     p.agentsPathForScope(o, scope),
+		}, nil
+	case artifactSkill:
+		if scope == scopeProject {
+			if strings.TrimSpace(o.ProjectCWD) == "" {
+				return promotionTarget{}, fmt.Errorf("project-scoped skill requires project cwd")
+			}
+			return promotionTarget{
+				Artifact: artifact,
+				Scope:    scope,
+				Path:     filepath.Join(o.ProjectCWD, ".agents", "skills"),
+			}, nil
+		}
+		return promotionTarget{
+			Artifact: artifact,
+			Scope:    scope,
+			Path:     p.SkillsDir,
+		}, nil
+	}
+	return promotionTarget{}, fmt.Errorf("unknown promotion artifact: %s", artifact)
+}
+
+func (p preferences) agentsPathForScope(o observation, scope observationScope) string {
+	if scope == scopeProject {
+		return filepath.Join(o.ProjectCWD, "AGENTS.md")
+	}
 	if p.PromotionMode == promotionModeUnified {
 		return p.AlwaysOnPath
 	}

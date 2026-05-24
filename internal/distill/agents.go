@@ -11,7 +11,8 @@ Purpose
   distill builds a local, user-curated memory model from Claude Code and Codex
   session history. It extracts observations about the user's preferences,
   workflow, friction points, and tool-use patterns, then lets the user promote
-  selected observations into durable agent instructions or skills.
+  selected observations into durable user- or project-scoped agent
+  instructions or skills.
 
 Hard safety boundary
   distill does not autonomously write promoted guidance into agent instruction
@@ -28,19 +29,23 @@ Mental model
 
   Observation:
     A durable claim about the user backed by evidence quotes from sessions.
-    Stored one JSON object per line in ~/.distill/observations.jsonl.
+    Carries user or project scope. Stored one JSON object per line in
+    ~/.distill/observations.jsonl.
 
   Evidence:
     A quote and turn reference from a source session. Evidence records include
-    the source product, so Claude and Codex signals remain distinguishable.
+    the source product and project cwd, so Claude/Codex and user/project
+    signals remain distinguishable.
 
   Synthesize:
     Corpus-level pass. Reads active observations and attaches proposed promotion
     actions for the user to review.
 
   Promotion:
-    A user-confirmed write to an always-on instruction file or to a SKILL.md
-    file. Promotion is intentionally human-in-the-loop.
+    A user-confirmed write to a scoped AGENTS.md-style instruction file or to a
+    SKILL.md file. Promotion is intentionally human-in-the-loop. Project
+    artifacts are portable: <project>/AGENTS.md and
+    <project>/.agents/skills/<name>/SKILL.md.
 
 State and source files
   distill state lives in ~/.distill/:
