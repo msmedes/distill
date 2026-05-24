@@ -79,6 +79,10 @@ brews:
       Your local state lives at ~/.distill/.
     install: |
       bin.install "distill"
+    post_install: |
+      if `brew services list 2>/dev/null`.match?(/^(msmedes\/distill\/)?distill\s+started/)
+        system "brew", "services", "restart", "msmedes/distill/distill"
+      end
     service: |
       run [opt_bin/"distill", "watch"]
       keep_alive true
