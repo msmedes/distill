@@ -26,6 +26,7 @@ func parseProduct(s string) (product, error) {
 type productSource struct {
 	product         product
 	listSessions    func(paths) ([]sessionMeta, error)
+	listCandidates  func(paths) ([]sessionCandidate, error)
 	parseTranscript func(string) ([]transcriptTurn, error)
 }
 
@@ -34,11 +35,13 @@ func productSources(target product) []productSource {
 		{
 			product:         productClaude,
 			listSessions:    func(p paths) ([]sessionMeta, error) { return listClaudeSessions(p.claudeProjects) },
+			listCandidates:  func(p paths) ([]sessionCandidate, error) { return listClaudeSessionCandidates(p.claudeProjects) },
 			parseTranscript: parseTranscript,
 		},
 		{
 			product:         productCodex,
 			listSessions:    func(p paths) ([]sessionMeta, error) { return listCodexSessions(p.codexSessions) },
+			listCandidates:  func(p paths) ([]sessionCandidate, error) { return listCodexSessionCandidates(p.codexSessions) },
 			parseTranscript: parseCodexTranscript,
 		},
 	}
