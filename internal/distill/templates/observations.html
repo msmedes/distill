@@ -248,6 +248,18 @@
       border-color: var(--accent);
     }
     .propose-btn:active { transform: scale(0.96); }
+    .run-form {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .run-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
     button:disabled, button[data-busy] {
       opacity: 0.55;
       cursor: wait;
@@ -643,21 +655,30 @@
     </div>
   </header>
 
-  {{if gt .ObservationCount 0}}
-    <div class="filters">
+  <div class="filters">
+    {{if gt .ObservationCount 0}}
       <a class="filter {{if eq .Filter ""}}active{{end}}" href="/">all</a>
       {{range .Types}}
       <a class="filter {{if eq $.Filter .}}active{{end}}" href="/?type={{.}}">{{.}}</a>
       {{end}}
-      <div class="filter-spacer"></div>
+    {{end}}
+    <div class="filter-spacer"></div>
+    <form class="run-form" method="POST" action="/run" data-busy-text="running…">
+      <span class="run-meta">up to {{.RunBatchLimit}} · {{.WatchProduct}} · {{.SessionIndexStatus}}</span>
+      <button class="propose-btn" title="process up to {{.RunBatchLimit}} newest unrun sessions idle for 10 minutes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
+        run
+      </button>
+    </form>
+    {{if gt .ObservationCount 0}}
       <form method="POST" action="/synthesize" data-busy-text="synthesizing…">
         <button class="propose-btn" title="ask the model to propose scoped promotions to skills / instructions">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/><path d="m12 7 1.5 4.5L18 13l-4.5 1.5L12 19l-1.5-4.5L6 13l4.5-1.5z"/></svg>
           propose promotions
         </button>
       </form>
-    </div>
-  {{end}}
+    {{end}}
+  </div>
 
   <details class="settings">
     <summary>promotion destinations</summary>
@@ -768,7 +789,7 @@
     </div>
   {{else}}
     <div class="empty">
-      no observations yet — run <code>distill extract</code>
+      no observations yet — run the newest unrun sessions
     </div>
   {{end}}
 </div>

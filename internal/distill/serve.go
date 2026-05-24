@@ -39,11 +39,17 @@ func runServe(args []string) error {
 	if err := srv.loadTemplates(); err != nil {
 		return fmt.Errorf("loading templates: %w", err)
 	}
+	if prefs, err := readPreferences(p); err == nil {
+		startSessionIndexRefresh(p, prefs.watchProduct())
+	} else {
+		log.Printf("session index refresh skipped: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/help", srv.handleHelp)
 	mux.HandleFunc("/obs/", srv.handleObsAction)
+	mux.HandleFunc("/run", srv.handleRun)
 	mux.HandleFunc("/synthesize", srv.handleSynthesize)
 	mux.HandleFunc("/settings", srv.handleSettings)
 
@@ -157,13 +163,21 @@ func (s *server) loadTemplates() error {
 }
 
 type indexData struct {
-	Observations      []observation
-	ObservationCount  int
-	SessionsProcessed int
-	Filter            string
-	Types             []observationType
-	Preferences       preferences
+	Observations       []observation
+	ObservationCount   int
+	SessionsProcessed  int
+	RunBatchLimit      int
+	WatchProduct       product
+	SessionIndexStatus string
+	Filter             string
+	Types              []observationType
+	Preferences        preferences
 }
+
+const (
+	webRunBatchLimit = 5
+	webRunQuietFor   = 10 * time.Minute
+)
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
@@ -211,12 +225,20 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("reading preferences: %v", err), http.StatusInternalServerError)
 		return
 	}
+	watchProduct := prefs.watchProduct()
+	indexStatus, err := explainSessionIndex(s.paths)
+	if err != nil {
+		indexStatus = "index unavailable"
+	}
 
 	data := indexData{
-		Observations:      filtered,
-		ObservationCount:  len(obs),
-		SessionsProcessed: sessionsProcessed,
-		Filter:            filter,
+		Observations:       filtered,
+		ObservationCount:   len(obs),
+		SessionsProcessed:  sessionsProcessed,
+		RunBatchLimit:      webRunBatchLimit,
+		WatchProduct:       watchProduct,
+		SessionIndexStatus: indexStatus,
+		Filter:             filter,
 		Types: []observationType{
 			typePreference, typeWorkflow, typeFriction, typeToolUse,
 		},
@@ -355,6 +377,38 @@ func (s *server) handleObsAction(w http.ResponseWriter, r *http.Request) {
 		target = ref
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// handleRun processes the newest unprocessed sessions on demand. It shares the
+// extract path used by the CLI so local skip rules and processed-session state
+// stay identical.
+func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	prefs, err := readPreferences(s.paths)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	opts := extractOpts{
+		product:           prefs.watchProduct(),
+		recent:            webRunBatchLimit,
+		onlyNew:           true,
+		model:             "haiku",
+		maxTranscriptChar: 60_000,
+		minUserTurns:      2,
+		minUserChars:      200,
+		maxObservations:   80,
+		zoomContextChars:  2500,
+	}
+	if err := runExtractWithPaths(s.paths, opts, webRunQuietFor); err != nil {
+		log.Printf("run: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // handleSynthesize runs a synthesis pass on demand. Blocks until the LLM call

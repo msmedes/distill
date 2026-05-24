@@ -107,6 +107,10 @@ func runExtractOnce(opts extractOpts, quietFor time.Duration) error {
 	if err != nil {
 		return err
 	}
+	return runExtractWithPaths(p, opts, quietFor)
+}
+
+func runExtractWithPaths(p paths, opts extractOpts, quietFor time.Duration) error {
 	if err := p.ensure(); err != nil {
 		return err
 	}
@@ -117,19 +121,15 @@ func runExtractOnce(opts extractOpts, quietFor time.Duration) error {
 		return err
 	}
 
-	all, err := listSessions(p, opts.product)
+	targets, err := selectTargets(p, state, opts, quietFor)
 	if err != nil {
 		return err
-	}
-	if quietFor > 0 {
-		all = quietSessions(all, quietFor, time.Now())
 	}
 
 	if _, err := resolveModel(opts.model); err != nil {
 		return err
 	}
 
-	targets := pickTargets(all, state, opts)
 	if len(targets) == 0 {
 		fmt.Println("no sessions to process")
 		return nil
@@ -145,6 +145,50 @@ func runExtractOnce(opts extractOpts, quietFor time.Duration) error {
 	}
 
 	return nil
+}
+
+func selectTargets(p paths, state *stateFile, opts extractOpts, quietFor time.Duration) ([]sessionMeta, error) {
+	if opts.sessionID == "" && opts.onlyNew && opts.recent > 0 {
+		if targets, ok, err := indexedRecentUnprocessedTargets(p, state, opts.product, quietFor, opts.recent); err != nil {
+			fmt.Fprintf(os.Stderr, "  warn: session index unavailable: %v\n", err)
+		} else if ok {
+			fmt.Printf("session index: selected %d session(s)\n", len(targets))
+			return targets, nil
+		}
+		fmt.Println("session index: not ready; falling back to filesystem scan")
+		return pickRecentUnprocessedTargets(p, state, opts.product, quietFor, opts.recent)
+	}
+	all, err := listSessions(p, opts.product)
+	if err != nil {
+		return nil, err
+	}
+	if quietFor > 0 {
+		all = quietSessions(all, quietFor, time.Now())
+	}
+	return pickTargets(all, state, opts), nil
+}
+
+func pickRecentUnprocessedTargets(p paths, state *stateFile, target product, quietFor time.Duration, limit int) ([]sessionMeta, error) {
+	candidates, err := listSessionCandidates(p, target)
+	if err != nil {
+		return nil, err
+	}
+	cutoff := time.Now().Add(-quietFor)
+	var out []sessionMeta
+	for _, c := range candidates {
+		if quietFor > 0 && c.mtime.After(cutoff) {
+			continue
+		}
+		s := c.hydrate()
+		if processedSession(state, s) {
+			continue
+		}
+		out = append(out, s)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func quietSessions(sessions []sessionMeta, quietFor time.Duration, now time.Time) []sessionMeta {

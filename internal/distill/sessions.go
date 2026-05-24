@@ -22,6 +22,14 @@ type sessionMeta struct {
 	cwd        string
 }
 
+type sessionCandidate struct {
+	product    product
+	sessionID  string
+	projectDir string
+	filePath   string
+	mtime      time.Time
+}
+
 type transcriptTurn struct {
 	role      string
 	text      string
@@ -44,15 +52,42 @@ func listSessions(p paths, target product) ([]sessionMeta, error) {
 	return out, nil
 }
 
+func listSessionCandidates(p paths, target product) ([]sessionCandidate, error) {
+	var out []sessionCandidate
+	for _, source := range productSources(target) {
+		candidates, err := source.listCandidates(p)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		out = append(out, candidates...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].mtime.After(out[j].mtime)
+	})
+	return out, nil
+}
+
 // listClaudeSessions walks every Claude Code project dir and returns all sessions.
 // Errors on individual project dirs are skipped silently.
 func listClaudeSessions(claudeProjects string) ([]sessionMeta, error) {
+	candidates, err := listClaudeSessionCandidates(claudeProjects)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sessionMeta, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, c.hydrate())
+	}
+	return out, nil
+}
+
+func listClaudeSessionCandidates(claudeProjects string) ([]sessionCandidate, error) {
 	entries, err := os.ReadDir(claudeProjects)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", claudeProjects, err)
 	}
 
-	var out []sessionMeta
+	var out []sessionCandidate
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
@@ -71,14 +106,12 @@ func listClaudeSessions(claudeProjects string) ([]sessionMeta, error) {
 			if err != nil {
 				continue
 			}
-			cwd := peekCwd(filePath)
-			out = append(out, sessionMeta{
+			out = append(out, sessionCandidate{
 				product:    productClaude,
 				sessionID:  strings.TrimSuffix(f.Name(), ".jsonl"),
 				projectDir: projectDir,
 				filePath:   filePath,
 				mtime:      info.ModTime(),
-				cwd:        cwd,
 			})
 		}
 	}
@@ -87,7 +120,19 @@ func listClaudeSessions(claudeProjects string) ([]sessionMeta, error) {
 }
 
 func listCodexSessions(codexSessions string) ([]sessionMeta, error) {
-	var out []sessionMeta
+	candidates, err := listCodexSessionCandidates(codexSessions)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sessionMeta, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, c.hydrate())
+	}
+	return out, nil
+}
+
+func listCodexSessionCandidates(codexSessions string) ([]sessionCandidate, error) {
+	var out []sessionCandidate
 	err := filepath.WalkDir(codexSessions, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if d != nil && d.IsDir() {
@@ -102,17 +147,11 @@ func listCodexSessions(codexSessions string) ([]sessionMeta, error) {
 		if err != nil {
 			return nil
 		}
-		meta := peekCodexMeta(path)
-		sessionID := meta.sessionID
-		if sessionID == "" {
-			sessionID = strings.TrimSuffix(strings.TrimPrefix(d.Name(), "rollout-"), ".jsonl")
-		}
-		out = append(out, sessionMeta{
+		out = append(out, sessionCandidate{
 			product:   productCodex,
-			sessionID: sessionID,
+			sessionID: strings.TrimSuffix(strings.TrimPrefix(d.Name(), "rollout-"), ".jsonl"),
 			filePath:  path,
 			mtime:     info.ModTime(),
-			cwd:       meta.cwd,
 		})
 		return nil
 	})
@@ -120,6 +159,27 @@ func listCodexSessions(codexSessions string) ([]sessionMeta, error) {
 		return nil, fmt.Errorf("reading %s: %w", codexSessions, err)
 	}
 	return out, nil
+}
+
+func (c sessionCandidate) hydrate() sessionMeta {
+	s := sessionMeta{
+		product:    c.product,
+		sessionID:  c.sessionID,
+		projectDir: c.projectDir,
+		filePath:   c.filePath,
+		mtime:      c.mtime,
+	}
+	switch c.product {
+	case productClaude:
+		s.cwd = peekCwd(c.filePath)
+	case productCodex:
+		meta := peekCodexMeta(c.filePath)
+		if meta.sessionID != "" {
+			s.sessionID = meta.sessionID
+		}
+		s.cwd = meta.cwd
+	}
+	return s
 }
 
 // parseTranscript reads a session JSONL and returns just the user/assistant
