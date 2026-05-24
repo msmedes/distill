@@ -214,6 +214,24 @@ scripts/smoke-install.sh
 
 The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json` plus non-Homebrew launchd plist behavior. It does not start `distill watch` and does not touch your real home directory.
 
+## FAQ
+
+**What version am I running?**
+
+```sh
+distill version          # or: distill --version, -v
+```
+
+Homebrew installs report the released tag (e.g. `v0.2.6`). Source builds without a tagged ldflag fall back to the module version from `runtime/debug.BuildInfo` (e.g. `v0.2.5+dirty`), or `dev` if neither is available.
+
+**How do I upgrade?**
+
+```sh
+brew upgrade msmedes/distill/distill
+```
+
+If the watcher service was running, it auto-restarts to pick up the new binary.
+
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).

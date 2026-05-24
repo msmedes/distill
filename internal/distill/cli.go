@@ -4,7 +4,22 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"runtime/debug"
 )
+
+// Version is overridden at release time via -ldflags
+// "-X github.com/msmedes/distill/internal/distill.Version=<tag>".
+var Version = ""
+
+func versionString() string {
+	if Version != "" {
+		return Version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 //go:embed prompts/*.md
 var promptsFS embed.FS
@@ -20,6 +35,7 @@ Usage:
   distill compact
   distill install    [--yes]
   distill agents
+  distill version
 
 Examples:
   distill extract                    # process the most recent session
@@ -79,6 +95,8 @@ func Main(args []string) int {
 		}
 	case "agents", "--agents":
 		printAgentsGuide(os.Stdout)
+	case "version", "--version", "-v":
+		fmt.Println(versionString())
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
