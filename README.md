@@ -17,8 +17,8 @@ distill calls the `claude` CLI for all LLM work, so it rides your existing Claud
 
 ```sh
 brew install msmedes/distill/distill
-distill install
-brew services start distill  # optional background watcher
+distill install              # configure watched products and destinations
+brew services start distill  # optional: run the watcher in the background
 ```
 
 ### From source
@@ -36,7 +36,7 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 ## Quickstart
 
 ```sh
-# 0. Configure watched products, promotion destinations, and automatic watching
+# 0. Configure watched products and promotion destinations
 ./distill install
 # installer prints the web UI command and URL
 
@@ -128,7 +128,7 @@ Promoted observations default to:
 - **Skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
 - **Always-on instructions:** Opus rewrites the configured instruction file to integrate the observation into the existing structure. You review the diff before committing; distill does not create a special managed section.
 
-`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Finally, it asks whether to start `distill watch` automatically at login. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files.
+`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether always-on promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
 
 For agents trying to answer how distill works from an installed binary, run:
 
@@ -181,11 +181,11 @@ Known follow-ups:
 The extractor does a cheap local pass before calling Claude. Short sessions with no correction/preference markers are marked processed without an LLM call, and non-skipped sessions send user-authored turns plus bounded local assistant context around high-signal corrections. Existing observations are reduced to a relevant capped subset.
 
 ```sh
-./distill install                       # choose watched products and destinations
-./distill watch                         # scan every hour, require 10m quiet
-./distill watch --interval 2h           # scan every two hours
-./distill watch --product codex         # watch only Codex transcripts
-./distill watch --quiet-for 30m         # wait longer before processing active files
+distill install                       # choose watched products and destinations
+distill watch                         # scan every hour, require 10m quiet
+distill watch --interval 2h           # scan every two hours
+distill watch --product codex         # watch only Codex transcripts
+distill watch --quiet-for 30m         # wait longer before processing active files
 ```
 
 For Homebrew installs, automatic watching is managed by Homebrew services:
@@ -196,7 +196,7 @@ brew services restart distill  # after brew upgrade, to pick up the new binary
 brew services stop distill
 ```
 
-The Homebrew service runs `distill watch`, which reads the watched products from `~/.distill/preferences.json`. For non-Homebrew installs, choosing automatic watching during `install` writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Homebrew service logs go to Homebrew's log directory; direct launchd logs go to `~/.distill/watch.log`. If you choose manual watching, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
+The Homebrew service runs `distill watch`, which reads the watched products from `~/.distill/preferences.json`. For non-Homebrew installs, choosing automatic watching during `install` writes and loads a user launchd agent at `~/Library/LaunchAgents/com.msmedes.distill.watch.plist`. Homebrew service logs go to Homebrew's log directory; direct launchd logs go to `~/.distill/watch.log`. If you choose manual watching during a non-Homebrew install, no launchd agent is installed and the summary prints the exact `distill watch --product ...` command to run.
 
 `install` does not keep the web server running. At the end it prints `distill serve` and `http://127.0.0.1:7373`; run that command whenever you want to review observations, accept proposals, or change promotion destinations.
 
@@ -206,7 +206,7 @@ The Homebrew service runs `distill watch`, which reads the watched products from
 scripts/smoke-install.sh
 ```
 
-The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json` and launchd plist behavior. It does not start `distill watch` and does not touch your real home directory.
+The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json` plus non-Homebrew launchd plist behavior. It does not start `distill watch` and does not touch your real home directory.
 
 ## License
 
