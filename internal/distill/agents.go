@@ -65,6 +65,8 @@ Important commands
 
   distill extract --recent N
     Processes the N most recent sessions across the selected products.
+    Add --codex or --claude to target one product; these are aliases for
+    --product codex and --product claude.
 
   distill extract --new
     Processes all unprocessed sessions. If combined with --recent N, recent is

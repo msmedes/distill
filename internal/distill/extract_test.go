@@ -25,6 +25,43 @@ func TestShouldSkipExtractionRequiresEnoughUserSignal(t *testing.T) {
 	}
 }
 
+func TestExtractProductSelectionAcceptsErgonomicProductFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		productName string
+		productSet  bool
+		codexOnly   bool
+		claudeOnly  bool
+		want        product
+		wantErr     string
+	}{
+		{name: "default all", productName: "all", want: productAll},
+		{name: "product flag", productName: "codex", productSet: true, want: productCodex},
+		{name: "codex alias", productName: "all", codexOnly: true, want: productCodex},
+		{name: "claude alias", productName: "all", claudeOnly: true, want: productClaude},
+		{name: "conflicting aliases", productName: "all", codexOnly: true, claudeOnly: true, wantErr: "choose only one product selector"},
+		{name: "conflicting product and alias", productName: "codex", productSet: true, codexOnly: true, wantErr: "choose only one product selector"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := extractProductSelection(tt.productName, tt.productSet, tt.codexOnly, tt.claudeOnly)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestRenderExtractionTranscriptDropsAssistantTurnsByDefault(t *testing.T) {
 	rendered := renderExtractionTranscript([]transcriptTurn{
 		{role: "user", uuid: "1234567890", text: "first"},

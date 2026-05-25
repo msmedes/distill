@@ -216,24 +216,27 @@ func (i *sessionIndex) upsertCandidate(ctx context.Context, c sessionCandidate) 
 		return false, err
 	}
 
-	var existingProduct string
+	var existingProduct, existingCWD string
 	var existingMTime, existingSize int64
 	err = i.db.QueryRowContext(ctx, `
-		SELECT product, mtime_ns, size
+		SELECT product, mtime_ns, size, cwd
 		FROM sessions
 		WHERE path = ?
-	`, c.filePath).Scan(&existingProduct, &existingMTime, &existingSize)
+	`, c.filePath).Scan(&existingProduct, &existingMTime, &existingSize, &existingCWD)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
 
 	mtimeNS := info.ModTime().UnixNano()
 	if err == nil && existingProduct == string(c.product) && existingMTime == mtimeNS && existingSize == info.Size() {
+		if existingCWD == "" {
+			existingCWD = c.hydrate().cwd
+		}
 		_, err := i.db.ExecContext(ctx, `
 			UPDATE sessions
-			SET deleted_at_ns = NULL, indexed_at_ns = ?
+			SET deleted_at_ns = NULL, indexed_at_ns = ?, cwd = ?
 			WHERE path = ?
-		`, time.Now().UnixNano(), c.filePath)
+		`, time.Now().UnixNano(), existingCWD, c.filePath)
 		return true, err
 	}
 
@@ -388,6 +391,48 @@ func queryIndexedSessionBatch(db *sql.DB, target product, cutoff int64, limit, o
 		ORDER BY mtime_ns DESC
 		LIMIT ? OFFSET ?
 	`, string(target), cutoff, limit, offset)
+}
+
+func indexedSessionsByStateKey(p paths) (map[string]sessionMeta, error) {
+	idx, err := openSessionIndex(p)
+	if err != nil {
+		return nil, err
+	}
+	defer idx.close()
+
+	rows, err := idx.db.Query(`
+		SELECT product, session_id, path, mtime_ns, cwd
+		FROM sessions
+		WHERE deleted_at_ns IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]sessionMeta{}
+	for rows.Next() {
+		var s indexedSession
+		var productName string
+		var mtimeNS int64
+		if err := rows.Scan(&productName, &s.sessionID, &s.filePath, &mtimeNS, &s.cwd); err != nil {
+			return nil, err
+		}
+		s.product = product(productName)
+		s.mtime = time.Unix(0, mtimeNS)
+		meta := sessionMeta{
+			product:   s.product,
+			sessionID: s.sessionID,
+			filePath:  s.filePath,
+			mtime:     s.mtime,
+			cwd:       s.cwd,
+		}
+		out[sessionStateKey(meta.product, meta.sessionID)] = meta
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (i *sessionIndex) hasFinishedRefresh() (bool, error) {

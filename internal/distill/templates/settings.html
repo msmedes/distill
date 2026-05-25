@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>distill settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-soft: #6b6b6b;
+      --fg-faint: #a8a8a8;
+      --bg: #fafaf9;
+      --bg-card: #ffffff;
+      --bg-card-muted: #f5f4f2;
+      --border: #e7e5e4;
+      --border-soft: #f0efed;
+      --accent: #b45309;
+      --danger: #991b1b;
+      --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --sans: -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 28px;
+      gap: 12px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
+    h1 .dot { color: var(--accent); }
+    .meta {
+      font-size: 12px;
+      color: var(--fg-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .meta a {
+      color: var(--fg-soft);
+      text-decoration: none;
+    }
+    .meta a:hover { color: var(--fg); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .panel h2 {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: lowercase;
+      margin-bottom: 12px;
+    }
+    .grid {
+      display: grid;
+      gap: 10px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .label {
+      padding-top: 7px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-soft);
+      text-transform: lowercase;
+    }
+    .help {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      margin-left: 5px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--bg);
+      color: var(--fg-soft);
+      cursor: help;
+      font-family: var(--mono);
+      font-size: 10px;
+      line-height: 1;
+      text-transform: none;
+    }
+    .help::after {
+      content: attr(data-help);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      z-index: 2;
+      width: min(320px, calc(100vw - 48px));
+      padding: 8px 10px;
+      border: 1px solid var(--fg-soft);
+      border-radius: 4px;
+      background: var(--fg);
+      color: var(--bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      white-space: normal;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 4px);
+      transition: opacity 0.12s, transform 0.12s;
+    }
+    .help:hover::after,
+    .help:focus::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .control {
+      min-width: 0;
+    }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      min-width: 0;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 7px 9px;
+      outline: none;
+    }
+    input:focus { border-color: var(--fg-soft); }
+    .segmented, .checks {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .choice {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--fg-soft);
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: default;
+    }
+    .choice input { margin: 0; accent-color: var(--accent); }
+    .choice.selected {
+      color: var(--fg);
+      border-color: var(--fg-soft);
+      background: var(--bg-card-muted);
+    }
+    .hint {
+      margin-top: 5px;
+      color: var(--fg-faint);
+      font-size: 12px;
+      max-width: 66ch;
+    }
+    .path-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      border: 1px solid var(--border-soft);
+      border-radius: 4px;
+      background: var(--bg-card-muted);
+      padding: 9px;
+    }
+    .metric b {
+      display: block;
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 500;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric span {
+      display: block;
+      margin-top: 2px;
+      color: var(--fg-soft);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: lowercase;
+    }
+    .diag {
+      display: grid;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .diag-row {
+      min-width: 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .diag-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .diag-row span {
+      display: block;
+      color: var(--fg-faint);
+      margin-bottom: 2px;
+      text-transform: lowercase;
+    }
+    .diag-row code {
+      display: block;
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: var(--mono);
+    }
+    .diag-row.error code {
+      color: var(--danger);
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-soft);
+    }
+    button {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 6px 11px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg-soft);
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: lowercase;
+    }
+    button.primary {
+      background: var(--fg);
+      border-color: var(--fg);
+      color: var(--bg);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    @media (max-width: 820px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+      }
+      .label {
+        padding-top: 0;
+      }
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 560px) {
+      header.top {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>distill<span class="dot">.</span> settings</h1>
+    <div class="meta"><a href="/">observations</a> · <a href="/sessions">sessions</a></div>
+  </header>
+
+  <form class="layout" method="POST" action="/settings">
+    <main>
+      <section class="panel">
+        <h2>extraction</h2>
+        <div class="grid">
+          <div class="row">
+            <div class="label">backend <span class="help" tabindex="0" data-help="The command Distill calls to turn transcript text into observation JSON. This is separate from which product produced the transcript.">?</span></div>
+            <div class="control">
+              <div class="segmented">
+                <label class="choice {{if eq .Preferences.ExtractionBackend "claude"}}selected{{end}}"><input type="radio" name="extraction_backend" value="claude" {{if eq .Preferences.ExtractionBackend "claude"}}checked{{end}}> claude -p</label>
+                <label class="choice {{if eq .Preferences.ExtractionBackend "codex"}}selected{{end}}"><input type="radio" name="extraction_backend" value="codex" {{if eq .Preferences.ExtractionBackend "codex"}}checked{{end}}> codex exec</label>
+              </div>
+              <p class="hint">The backend reads selected transcripts and writes observations. It is independent from whether the transcript came from Claude Code or Codex.</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">model / profile <span class="help" tabindex="0" data-help="The model or profile passed to the extraction backend. Claude uses model aliases; Codex would use model or profile options.">?</span></div>
+            <div class="control">
+              <input type="text" name="extraction_model" value="{{.Preferences.ExtractionModel}}">
+              <p class="hint">Claude accepts haiku / sonnet / opus. Codex passes non-Claude model names through to <code>codex exec --model</code>.</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">backend paths <span class="help" tabindex="0" data-help="Resolved executable paths. These matter for launchd and other non-login environments where shell PATH may be smaller than your terminal PATH.">?</span></div>
+            <div class="control path-grid">
+              <input type="text" name="claude_command_path" value="{{if .Preferences.ClaudeCommandPath}}{{.Preferences.ClaudeCommandPath}}{{else}}{{.ClaudeCommand}}{{end}}">
+              <input type="text" name="codex_command_path" value="{{if .Preferences.CodexCommandPath}}{{.Preferences.CodexCommandPath}}{{else}}{{.CodexCommand}}{{end}}">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>sources</h2>
+        <div class="grid">
+          <div class="row">
+            <div class="label">watched products <span class="help" tabindex="0" data-help="Which transcript directories Distill scans. This does not control the extraction backend.">?</span></div>
+            <div class="control">
+              <div class="checks">
+                <label class="choice {{if .Preferences.WatchClaude}}selected{{end}}"><input type="checkbox" name="watch_claude" {{if .Preferences.WatchClaude}}checked{{end}}> Claude Code</label>
+                <label class="choice {{if .Preferences.WatchCodex}}selected{{end}}"><input type="checkbox" name="watch_codex" {{if .Preferences.WatchCodex}}checked{{end}}> Codex</label>
+                <label class="choice {{if .Preferences.AutomaticWatch}}selected{{end}}"><input type="checkbox" name="automatic_watch" {{if .Preferences.AutomaticWatch}}checked{{end}}> automatic watch</label>
+              </div>
+              <p class="hint">Current effective source selection: {{.WatchProduct}}</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">watch cadence <span class="help" tabindex="0" data-help="How often the background watcher scans and how cautious it is about sessions that may still be active.">?</span></div>
+            <div class="control mini-grid">
+              <div><input type="text" name="watch_interval" value="{{.Preferences.WatchInterval}}" title="Background watcher scan interval."><p class="hint">watch interval</p></div>
+              <div><input type="text" name="quiet_for" value="{{.Preferences.QuietFor}}" title="Skip transcript files modified within the last 10 minutes. Distill uses file modification time as the active-session signal."><p class="hint">session idle time</p></div>
+              <div><input type="number" name="web_run_batch_limit" value="{{.Preferences.WebRunBatchLimit}}" title="Maximum sessions processed by the web UI Run button in one click."><p class="hint">run button limit</p></div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">local skip <span class="help" tabindex="0" data-help="Cheap preflight rules that mark tiny low-signal sessions processed without spending an extraction call. Signal words still bypass the skip.">?</span></div>
+            <div class="control mini-grid">
+              <div><input type="number" name="min_user_turns" value="{{.Preferences.MinUserTurns}}" title="Sessions below this many user turns are skipped unless they contain correction or preference markers."><p class="hint">min user turns</p></div>
+              <div><input type="number" name="min_user_chars" value="{{.Preferences.MinUserChars}}" title="Sessions below this many user-authored characters are skipped unless they contain correction or preference markers."><p class="hint">min user chars</p></div>
+              <label class="choice {{if not .Preferences.NoSkip}}selected{{end}}"><input type="checkbox" name="skip_low_signal" {{if not .Preferences.NoSkip}}checked{{end}}> skip low-signal sessions</label>
+            </div>
+            <input type="hidden" name="max_transcript_chars" value="{{.Preferences.MaxTranscriptChars}}">
+            <input type="hidden" name="max_observations" value="{{.Preferences.MaxObservations}}">
+            <input type="hidden" name="zoom_context_chars" value="{{.Preferences.ZoomContextChars}}">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>targets</h2>
+        <div class="grid">
+          <div class="row">
+            <div class="label">target policy <span class="help" tabindex="0" data-help="Unified means user-scoped guidance goes to one shared .agents file. Product-specific keeps Claude and Codex instruction destinations separate.">?</span></div>
+            <div class="control">
+              <div class="segmented">
+                <label class="choice {{if eq .Preferences.PromotionMode "unified"}}selected{{end}}"><input type="radio" name="promotion_mode" value="unified" {{if eq .Preferences.PromotionMode "unified"}}checked{{end}}> unified</label>
+                <label class="choice {{if eq .Preferences.PromotionMode "separate"}}selected{{end}}"><input type="radio" name="promotion_mode" value="separate" {{if eq .Preferences.PromotionMode "separate"}}checked{{end}}> product-specific</label>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">user instructions <span class="help" tabindex="0" data-help="Global instruction files for user-scoped observations. These are not project-local promotions.">?</span></div>
+            <div class="control path-grid">
+              <input type="text" name="always_on_path" value="{{.Preferences.AlwaysOnPath}}">
+              <input type="text" name="claude_md_path" value="{{.Preferences.ClaudeMDPath}}">
+              <input type="text" name="codex_agents_path" value="{{.Preferences.CodexAgentsPath}}">
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">skills <span class="help" tabindex="0" data-help="User skills are global. Project skills are repo-local under .agents/skills.">?</span></div>
+            <div class="control path-grid">
+              <input type="text" name="skills_dir" value="{{.Preferences.SkillsDir}}">
+              <input type="text" name="project_skills_dir" value="{{.Preferences.ProjectSkillsDir}}">
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">project instructions <span class="help" tabindex="0" data-help="Project-scoped instruction promotions write AGENTS.md in the source repository from the evidence session.">?</span></div>
+            <div class="control">
+              <input type="text" name="project_instructions_file" value="{{.Preferences.ProjectInstructionsFile}}">
+              <p class="hint">Project-scoped promotions write into the source repo, not the global target paths above.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button type="reset">reset</button>
+        <button class="primary">save settings</button>
+      </div>
+    </main>
+
+    <aside>
+      <section class="panel">
+        <h2>diagnostics</h2>
+        <div class="mini-grid">
+          <div class="metric"><b>{{.IndexedClaude}}</b><span>claude indexed</span></div>
+          <div class="metric"><b>{{.ProcessedClaude}}</b><span>claude processed</span></div>
+          <div class="metric"><b>{{.UnprocessedClaude}}</b><span>claude pending</span></div>
+          <div class="metric"><b>{{.IndexedCodex}}</b><span>codex indexed</span></div>
+          <div class="metric"><b>{{.ProcessedCodex}}</b><span>codex processed</span></div>
+          <div class="metric"><b>{{.UnprocessedCodex}}</b><span>codex pending</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>runtime</h2>
+        <div class="diag">
+          <div class="diag-row"><span>index</span><code>{{.SessionIndexStatus}}</code></div>
+          <div class="diag-row"><span>automatic watch</span><code>{{if .Preferences.AutomaticWatch}}enabled{{else}}disabled{{end}}</code></div>
+          <div class="diag-row"><span>extraction backend</span><code>{{.ExtractionBackend}}</code></div>
+          <div class="diag-row error"><span>last watcher error</span><code>{{.LastWatcherError}}</code></div>
+        </div>
+      </section>
+    </aside>
+  </form>
+</div>
+</body>
+</html>

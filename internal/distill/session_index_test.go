@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,6 +64,45 @@ func TestSessionIndexSkipsUnchangedFilesOnRefresh(t *testing.T) {
 	}
 	if secondIndexedAt <= firstIndexedAt {
 		t.Fatalf("expected unchanged row heartbeat to update indexed_at_ns: first=%d second=%d", firstIndexedAt, secondIndexedAt)
+	}
+}
+
+func TestSessionIndexBackfillsClaudeCWDFromProjectDir(t *testing.T) {
+	p := testPaths(t)
+	cwd := filepath.Join(os.TempDir(), "distilldecode"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cwd) })
+	projectName := "-" + strings.ReplaceAll(strings.TrimPrefix(cwd, string(filepath.Separator)), string(filepath.Separator), "-")
+	projectDir := filepath.Join(p.claudeProjects, projectName)
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := filepath.Join(projectDir, "session-1.jsonl")
+	if err := os.WriteFile(sessionPath, []byte(`{"type":"user","message":{"content":"hello"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(sessionPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := refreshSessionIndex(context.Background(), p, productClaude); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := openSessionIndex(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.close()
+	var got string
+	if err := idx.db.QueryRow(`SELECT cwd FROM sessions WHERE session_id = 'session-1'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != cwd {
+		t.Fatalf("expected decoded cwd %q, got %q", cwd, got)
 	}
 }
 

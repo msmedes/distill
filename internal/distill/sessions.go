@@ -172,6 +172,9 @@ func (c sessionCandidate) hydrate() sessionMeta {
 	switch c.product {
 	case productClaude:
 		s.cwd = peekCwd(c.filePath)
+		if s.cwd == "" {
+			s.cwd = decodeClaudeProjectCWD(c.projectDir)
+		}
 	case productCodex:
 		meta := peekCodexMeta(c.filePath)
 		if meta.sessionID != "" {
@@ -180,6 +183,18 @@ func (c sessionCandidate) hydrate() sessionMeta {
 		s.cwd = meta.cwd
 	}
 	return s
+}
+
+func decodeClaudeProjectCWD(projectDir string) string {
+	name := filepath.Base(projectDir)
+	if !strings.HasPrefix(name, "-") {
+		return ""
+	}
+	candidate := string(filepath.Separator) + strings.ReplaceAll(strings.TrimPrefix(name, "-"), "-", string(filepath.Separator))
+	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		return candidate
+	}
+	return ""
 }
 
 // parseTranscript reads a session JSONL and returns just the user/assistant

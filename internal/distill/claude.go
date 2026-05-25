@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -34,6 +35,7 @@ func resolveModel(name string) (modelID, error) {
 // callClaude shells out to the local `claude` CLI in print mode. Reuses the
 // user's existing Claude Code auth — distill never touches an API key.
 func callClaude(ctx context.Context, model modelID, prompt string) (string, error) {
+	claudePath, env := resolveClaudeCommand("")
 	args := []string{
 		"-p",
 		"--model", string(model),
@@ -41,9 +43,9 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 		"--no-session-persistence",
 		"--disable-slash-commands",
 	}
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Stdin = strings.NewReader(prompt)
-	cmd.Env = append(os.Environ(), "DISTILL_INTERNAL=1")
+	cmd.Env = append(env, "DISTILL_INTERNAL=1")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -53,6 +55,142 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 		return "", fmt.Errorf("claude exited: %w\nstderr: %s", err, truncate(stderr.String(), 2000))
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func callExtractor(ctx context.Context, prefs preferences, model string, prompt string) (string, error) {
+	switch prefs.ExtractionBackend {
+	case extractionBackendClaude:
+		resolved, err := resolveModel(model)
+		if err != nil {
+			return "", err
+		}
+		claudePath, env := resolveClaudeCommand(prefs.ClaudeCommandPath)
+		args := []string{
+			"-p",
+			"--model", string(resolved),
+			"--output-format", "text",
+			"--no-session-persistence",
+			"--disable-slash-commands",
+		}
+		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd.Stdin = strings.NewReader(prompt)
+		cmd.Env = append(env, "DISTILL_INTERNAL=1")
+
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("claude exited: %w\nstderr: %s", err, truncate(stderr.String(), 2000))
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	case extractionBackendCodex:
+		return callCodexExec(ctx, prefs, model, prompt)
+	default:
+		return "", fmt.Errorf("unknown extraction backend: %s", prefs.ExtractionBackend)
+	}
+}
+
+func callCodexExec(ctx context.Context, prefs preferences, model string, prompt string) (string, error) {
+	codexPath, env := resolveCommand("codex", prefs.CodexCommandPath)
+	out, err := os.CreateTemp("", "distill-codex-output-*.txt")
+	if err != nil {
+		return "", err
+	}
+	outPath := out.Name()
+	out.Close()
+	defer os.Remove(outPath)
+
+	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--output-last-message", outPath}
+	if strings.TrimSpace(model) != "" && model != "haiku" && model != "sonnet" && model != "opus" {
+		args = append(args, "--model", model)
+	}
+	args = append(args, "-")
+	cmd := exec.CommandContext(ctx, codexPath, args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Env = append(env, "DISTILL_INTERNAL=1")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("codex exec exited: %w\nstderr: %s", err, truncate(stderr.String(), 2000))
+	}
+	b, err := os.ReadFile(outPath)
+	if err == nil && strings.TrimSpace(string(b)) != "" {
+		return strings.TrimSpace(string(b)), nil
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+func resolveClaudeCommand(override string) (string, []string) {
+	return resolveCommand("claude", override)
+}
+
+func resolveCommand(name, override string) (string, []string) {
+	env := os.Environ()
+	path := extendedExecutablePath()
+	env = setEnv(env, "PATH", path)
+	if strings.TrimSpace(override) != "" {
+		if strings.Contains(override, string(filepath.Separator)) {
+			return override, env
+		}
+		if found := findExecutable(override, filepath.SplitList(path)); found != "" {
+			return found, env
+		}
+		return override, env
+	}
+	if found := findExecutable(name, filepath.SplitList(path)); found != "" {
+		return found, env
+	}
+	return name, env
+}
+
+func extendedExecutablePath() string {
+	parts := filepath.SplitList(os.Getenv("PATH"))
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		parts = append(parts, filepath.Join(home, ".local", "bin"))
+	}
+	parts = append(parts, "/opt/homebrew/bin", "/usr/local/bin")
+	return strings.Join(dedupeStrings(parts), string(os.PathListSeparator))
+}
+
+func findExecutable(name string, dirs []string) string {
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return path
+		}
+	}
+	return ""
+}
+
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+func dedupeStrings(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 // extractJSONBlock pulls the first JSON object out of a response that may

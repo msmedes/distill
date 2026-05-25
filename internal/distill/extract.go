@@ -61,25 +61,35 @@ type extractedContradict struct {
 }
 
 func runExtract(args []string) error {
+	p, err := resolvePaths()
+	if err != nil {
+		return err
+	}
+	prefs, err := readPreferences(p)
+	if err != nil {
+		return err
+	}
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
 	var (
 		sessionID   = fs.String("session", "", "process a specific session by id (prefix ok)")
 		productName = fs.String("product", "all", "sessions to process: claude | codex | all")
+		codexOnly   = fs.Bool("codex", false, "process Codex sessions")
+		claudeOnly  = fs.Bool("claude", false, "process Claude Code sessions")
 		recent      = fs.Int("recent", 1, "number of most-recent sessions to process")
 		onlyNew     = fs.Bool("new", false, "process all unprocessed sessions (overrides --recent)")
 		dryRun      = fs.Bool("dry-run", false, "show what would be extracted, don't write")
-		model       = fs.String("model", "haiku", "model to use: haiku | sonnet")
-		maxChars    = fs.Int("max-transcript-chars", 60_000, "truncate rendered user-message excerpts longer than this")
-		minTurns    = fs.Int("min-user-turns", 2, "skip sessions with fewer user turns unless high-signal language appears")
-		minChars    = fs.Int("min-user-chars", 200, "skip sessions with fewer user-message chars unless high-signal language appears")
-		maxObs      = fs.Int("max-observations", 80, "maximum relevant existing observations to include in extractor prompt")
-		zoomChars   = fs.Int("zoom-context-chars", 2500, "max chars from the preceding assistant turn to include around high-signal user turns")
-		noSkip      = fs.Bool("no-skip", false, "disable cheap local skipping for short low-signal sessions")
+		model       = fs.String("model", prefs.ExtractionModel, "model to use")
+		maxChars    = fs.Int("max-transcript-chars", prefs.MaxTranscriptChars, "truncate rendered user-message excerpts longer than this")
+		minTurns    = fs.Int("min-user-turns", prefs.MinUserTurns, "skip sessions with fewer user turns unless high-signal language appears")
+		minChars    = fs.Int("min-user-chars", prefs.MinUserChars, "skip sessions with fewer user-message chars unless high-signal language appears")
+		maxObs      = fs.Int("max-observations", prefs.MaxObservations, "maximum relevant existing observations to include in extractor prompt")
+		zoomChars   = fs.Int("zoom-context-chars", prefs.ZoomContextChars, "max chars from the preceding assistant turn to include around high-signal user turns")
+		noSkip      = fs.Bool("no-skip", prefs.NoSkip, "disable cheap local skipping for short low-signal sessions")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	targetProduct, err := parseProduct(*productName)
+	targetProduct, err := extractProductSelection(*productName, flagWasSet(fs, "product"), *codexOnly, *claudeOnly)
 	if err != nil {
 		return err
 	}
@@ -99,7 +109,40 @@ func runExtract(args []string) error {
 		noSkip:            *noSkip,
 	}
 
-	return runExtractOnce(opts, 0)
+	return runExtractWithPaths(p, opts, 0)
+}
+
+func extractProductSelection(productName string, productSet, codexOnly, claudeOnly bool) (product, error) {
+	selected := 0
+	if productSet {
+		selected++
+	}
+	if codexOnly {
+		selected++
+	}
+	if claudeOnly {
+		selected++
+	}
+	if selected > 1 {
+		return "", fmt.Errorf("choose only one product selector: --product, --codex, or --claude")
+	}
+	if codexOnly {
+		return productCodex, nil
+	}
+	if claudeOnly {
+		return productClaude, nil
+	}
+	return parseProduct(productName)
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	seen := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
 }
 
 func runExtractOnce(opts extractOpts, quietFor time.Duration) error {
@@ -123,10 +166,6 @@ func runExtractWithPaths(p paths, opts extractOpts, quietFor time.Duration) erro
 
 	targets, err := selectTargets(p, state, opts, quietFor)
 	if err != nil {
-		return err
-	}
-
-	if _, err := resolveModel(opts.model); err != nil {
 		return err
 	}
 
@@ -251,19 +290,19 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 		return err
 	}
 
-	model, err := resolveModel(opts.model)
+	prefs, err := readPreferences(st.paths)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading preferences: %w", err)
 	}
 
-	fmt.Printf("  calling claude -p (model=%s)…\n", opts.model)
+	fmt.Printf("  calling %s extractor (model=%s)…\n", prefs.ExtractionBackend, opts.model)
 	ctx, cancel := withTimeout(3 * time.Minute)
 	defer cancel()
 
 	start := time.Now()
-	raw, err := callClaude(ctx, model, prompt)
+	raw, err := callExtractor(ctx, prefs, opts.model, prompt)
 	if err != nil {
-		return fmt.Errorf("claude call failed: %w", err)
+		return fmt.Errorf("%s extractor failed: %w", prefs.ExtractionBackend, err)
 	}
 	fmt.Printf("  response in %.1fs\n", time.Since(start).Seconds())
 

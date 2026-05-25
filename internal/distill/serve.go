@@ -11,9 +11,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -48,6 +50,7 @@ func runServe(args []string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/help", srv.handleHelp)
+	mux.HandleFunc("/sessions", srv.handleSessions)
 	mux.HandleFunc("/obs/", srv.handleObsAction)
 	mux.HandleFunc("/run", srv.handleRun)
 	mux.HandleFunc("/synthesize", srv.handleSynthesize)
@@ -79,10 +82,12 @@ func runServe(args []string) error {
 }
 
 type server struct {
-	paths       paths
-	indexTmpl   *template.Template
-	helpTmpl    *template.Template
-	previewTmpl *template.Template
+	paths        paths
+	indexTmpl    *template.Template
+	helpTmpl     *template.Template
+	sessionsTmpl *template.Template
+	settingsTmpl *template.Template
+	previewTmpl  *template.Template
 }
 
 func (s *server) loadTemplates() error {
@@ -154,6 +159,18 @@ func (s *server) loadTemplates() error {
 		return err
 	}
 	s.helpTmpl = helpTmpl
+	sessionsTmpl, err := template.New("sessions.html").Funcs(funcs).
+		ParseFS(templatesFS, "templates/sessions.html")
+	if err != nil {
+		return err
+	}
+	s.sessionsTmpl = sessionsTmpl
+	settingsTmpl, err := template.New("settings.html").Funcs(funcs).
+		ParseFS(templatesFS, "templates/settings.html")
+	if err != nil {
+		return err
+	}
+	s.settingsTmpl = settingsTmpl
 	previewTmpl, err := template.ParseFS(templatesFS, "templates/preview.html")
 	if err != nil {
 		return err
@@ -174,10 +191,39 @@ type indexData struct {
 	Preferences        preferences
 }
 
-const (
-	webRunBatchLimit = 5
-	webRunQuietFor   = 10 * time.Minute
-)
+type sessionsData struct {
+	Sessions []processedSessionView
+	Count    int
+}
+
+type processedSessionView struct {
+	Product     product
+	SessionID   string
+	ShortID     string
+	SessionTime string
+	ProcessedAt string
+	Length      string
+	Project     string
+	Title       string
+	Command     string
+	SourcePath  string
+}
+
+type settingsData struct {
+	Preferences        preferences
+	WatchProduct       product
+	ExtractionBackend  string
+	ClaudeCommand      string
+	CodexCommand       string
+	IndexedClaude      int
+	IndexedCodex       int
+	ProcessedClaude    int
+	ProcessedCodex     int
+	UnprocessedClaude  int
+	UnprocessedCodex   int
+	SessionIndexStatus string
+	LastWatcherError   string
+}
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
@@ -235,7 +281,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Observations:       filtered,
 		ObservationCount:   len(obs),
 		SessionsProcessed:  sessionsProcessed,
-		RunBatchLimit:      webRunBatchLimit,
+		RunBatchLimit:      prefs.WebRunBatchLimit,
 		WatchProduct:       watchProduct,
 		SessionIndexStatus: indexStatus,
 		Filter:             filter,
@@ -266,8 +312,198 @@ func (s *server) handleHelp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.Path != "/sessions" {
+		http.NotFound(w, r)
+		return
+	}
+	sessions, err := s.processedSessions()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reading sessions: %v", err), http.StatusInternalServerError)
+		return
+	}
+	data := sessionsData{
+		Sessions: sessions,
+		Count:    len(sessions),
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.sessionsTmpl.Execute(w, data); err != nil {
+		log.Printf("sessions template execute: %v", err)
+	}
+}
+
+func (s *server) processedSessions() ([]processedSessionView, error) {
+	st := newStore(s.paths)
+	state, err := st.readState()
+	if err != nil {
+		return nil, err
+	}
+
+	indexed, err := indexedSessionsByStateKey(s.paths)
+	if err != nil {
+		indexed = map[string]sessionMeta{}
+	}
+
+	views := make([]processedSessionView, 0, len(state.ProcessedSessions))
+	for key, processedAt := range state.ProcessedSessions {
+		productName, sessionID := splitSessionStateKey(key)
+		meta, hasMeta := indexed[key]
+		if !hasMeta && productName == productClaude {
+			meta, hasMeta = indexed[sessionStateKey(productClaude, sessionID)]
+		}
+		if hasMeta {
+			productName = meta.product
+			sessionID = meta.sessionID
+		}
+
+		view := processedSessionView{
+			Product:     productName,
+			SessionID:   sessionID,
+			ShortID:     shortID(sessionID),
+			ProcessedAt: processedAt,
+			Title:       "untitled session",
+		}
+		if hasMeta {
+			view.SessionTime = meta.mtime.Format(time.RFC3339)
+			view.Project = projectLabel(meta.cwd, meta.projectDir)
+			view.SourcePath = meta.filePath
+			view.Command = sessionResumeCommand(productName, sessionID, meta.cwd)
+			title, length := summarizeSessionFile(meta)
+			if title != "" {
+				view.Title = title
+			}
+			view.Length = length
+		}
+		views = append(views, view)
+	}
+
+	sort.Slice(views, func(i, j int) bool {
+		if views[i].SessionTime != views[j].SessionTime {
+			if views[i].SessionTime == "" {
+				return false
+			}
+			if views[j].SessionTime == "" {
+				return true
+			}
+			return views[i].SessionTime > views[j].SessionTime
+		}
+		if views[i].ProcessedAt != views[j].ProcessedAt {
+			return views[i].ProcessedAt > views[j].ProcessedAt
+		}
+		return views[i].SessionID > views[j].SessionID
+	})
+	return views, nil
+}
+
+func splitSessionStateKey(key string) (product, string) {
+	parts := strings.SplitN(key, ":", 2)
+	if len(parts) != 2 {
+		return productClaude, key
+	}
+	return product(parts[0]), parts[1]
+}
+
+func projectLabel(cwd, projectDir string) string {
+	if cwd != "" {
+		return filepath.Base(cwd)
+	}
+	if projectDir != "" {
+		return filepath.Base(projectDir)
+	}
+	return ""
+}
+
+func sessionResumeCommand(p product, sessionID, cwd string) string {
+	var cmd string
+	switch p {
+	case productClaude:
+		cmd = "claude --resume " + shellQuote(sessionID)
+	case productCodex:
+		cmd = "codex resume " + shellQuote(sessionID)
+	default:
+		return ""
+	}
+	if cwd == "" {
+		return cmd
+	}
+	return "cd " + shellQuote(cwd) + " && " + cmd
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+func summarizeSessionFile(s sessionMeta) (string, string) {
+	turns, err := parseSessionTranscript(s)
+	if err != nil {
+		return "", ""
+	}
+	var title string
+	var first, last time.Time
+	for _, turn := range turns {
+		if title == "" && turn.role == "user" {
+			title = compactTitle(turn.text)
+		}
+		if turn.timestamp == "" {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, turn.timestamp)
+		if err != nil {
+			continue
+		}
+		if first.IsZero() || ts.Before(first) {
+			first = ts
+		}
+		if last.IsZero() || ts.After(last) {
+			last = ts
+		}
+	}
+	if first.IsZero() || last.IsZero() || !last.After(first) {
+		return title, ""
+	}
+	return title, humanDuration(last.Sub(first))
+}
+
+func compactTitle(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	const max = 110
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:max-3])) + "..."
+}
+
+func humanDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	if d < time.Minute {
+		return "<1m"
+	}
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	if m == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
 func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		s.renderSettings(w)
+		return
+	case http.MethodPost:
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -275,15 +511,154 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err := writePreferences(s.paths, preferences{
-		AlwaysOnPath: r.FormValue("always_on_path"),
-		SkillsDir:    r.FormValue("skills_dir"),
-	})
+	prefs, err := readPreferences(s.paths)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, fullSettings := r.Form["extraction_backend"]; fullSettings {
+		prefs.WatchClaude = r.FormValue("watch_claude") == "on"
+		prefs.WatchCodex = r.FormValue("watch_codex") == "on"
+		prefs.AutomaticWatch = r.FormValue("automatic_watch") == "on"
+		prefs.ExtractionBackend = r.FormValue("extraction_backend")
+		prefs.ExtractionModel = r.FormValue("extraction_model")
+		prefs.ClaudeCommandPath = r.FormValue("claude_command_path")
+		prefs.CodexCommandPath = r.FormValue("codex_command_path")
+		prefs.WatchInterval = r.FormValue("watch_interval")
+		prefs.QuietFor = r.FormValue("quiet_for")
+		prefs.WebRunBatchLimit = parsePositiveIntForm(r, "web_run_batch_limit", prefs.WebRunBatchLimit)
+		prefs.MinUserTurns = parsePositiveIntForm(r, "min_user_turns", prefs.MinUserTurns)
+		prefs.MinUserChars = parsePositiveIntForm(r, "min_user_chars", prefs.MinUserChars)
+		prefs.MaxTranscriptChars = parsePositiveIntForm(r, "max_transcript_chars", prefs.MaxTranscriptChars)
+		prefs.MaxObservations = parsePositiveIntForm(r, "max_observations", prefs.MaxObservations)
+		prefs.ZoomContextChars = parsePositiveIntForm(r, "zoom_context_chars", prefs.ZoomContextChars)
+		prefs.NoSkip = r.FormValue("skip_low_signal") != "on"
+		prefs.PromotionMode = r.FormValue("promotion_mode")
+		prefs.ClaudeMDPath = r.FormValue("claude_md_path")
+		prefs.CodexAgentsPath = r.FormValue("codex_agents_path")
+		prefs.ProjectInstructionsFile = r.FormValue("project_instructions_file")
+		prefs.ProjectSkillsDir = r.FormValue("project_skills_dir")
+	}
+	prefs.AlwaysOnPath = r.FormValue("always_on_path")
+	prefs.SkillsDir = r.FormValue("skills_dir")
+	if err := writePreferences(s.paths, prefs); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	target := "/settings"
+	if ref := r.Header.Get("Referer"); strings.HasPrefix(ref, "http://"+r.Host) || strings.HasPrefix(ref, "https://"+r.Host) {
+		target = ref
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func parsePositiveIntForm(r *http.Request, name string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}
+
+func (s *server) renderSettings(w http.ResponseWriter) {
+	prefs, err := readPreferences(s.paths)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reading preferences: %v", err), http.StatusInternalServerError)
+		return
+	}
+	data := settingsData{
+		Preferences:        prefs,
+		WatchProduct:       prefs.watchProduct(),
+		ExtractionBackend:  prefs.ExtractionBackend,
+		ClaudeCommand:      resolvedCommandLabel("claude", prefs.ClaudeCommandPath),
+		CodexCommand:       resolvedCommandLabel("codex", prefs.CodexCommandPath),
+		SessionIndexStatus: "index unavailable",
+		LastWatcherError:   latestWatcherError(s.paths),
+	}
+	data.IndexedClaude, data.IndexedCodex, data.ProcessedClaude, data.ProcessedCodex, data.UnprocessedClaude, data.UnprocessedCodex = settingsSessionCounts(s.paths)
+	if status, err := explainSessionIndex(s.paths); err == nil {
+		data.SessionIndexStatus = status
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.settingsTmpl.Execute(w, data); err != nil {
+		log.Printf("settings template execute: %v", err)
+	}
+}
+
+func resolvedCommandLabel(name, override string) string {
+	if name == "claude" {
+		path, _ := resolveClaudeCommand(override)
+		return path
+	}
+	if strings.TrimSpace(override) != "" {
+		path, _ := resolveCommand(name, override)
+		return path
+	}
+	path, err := exec.LookPath(name)
+	if err == nil {
+		return path
+	}
+	if found := findExecutable(name, filepath.SplitList(extendedExecutablePath())); found != "" {
+		return found
+	}
+	return "not found"
+}
+
+func settingsSessionCounts(p paths) (indexedClaude, indexedCodex, processedClaude, processedCodex, unprocessedClaude, unprocessedCodex int) {
+	st := newStore(p)
+	state, err := st.readState()
+	if err == nil {
+		for key := range state.ProcessedSessions {
+			productName, _ := splitSessionStateKey(key)
+			switch productName {
+			case productClaude:
+				processedClaude++
+			case productCodex:
+				processedCodex++
+			}
+		}
+	}
+	indexed, err := indexedSessionsByStateKey(p)
+	if err != nil {
+		return
+	}
+	for key, session := range indexed {
+		processed := false
+		if state != nil {
+			processed = processedSession(state, session)
+			if !processed && session.product == productClaude {
+				_, processed = state.ProcessedSessions[key]
+			}
+		}
+		switch session.product {
+		case productClaude:
+			indexedClaude++
+			if !processed {
+				unprocessedClaude++
+			}
+		case productCodex:
+			indexedCodex++
+			if !processed {
+				unprocessedCodex++
+			}
+		}
+	}
+	return
+}
+
+func latestWatcherError(p paths) string {
+	b, err := os.ReadFile(filepath.Join(p.stateDir, "watch.log"))
+	if err != nil {
+		return "none recorded"
+	}
+	lines := strings.Split(string(b), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.Contains(line, "error:") || strings.Contains(line, "failed") {
+			return line
+		}
+	}
+	return "none recorded"
 }
 
 // handleObsAction dispatches POSTs of the shape /obs/{id}/{action}.
@@ -394,16 +769,22 @@ func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := extractOpts{
 		product:           prefs.watchProduct(),
-		recent:            webRunBatchLimit,
+		recent:            prefs.WebRunBatchLimit,
 		onlyNew:           true,
-		model:             "haiku",
-		maxTranscriptChar: 60_000,
-		minUserTurns:      2,
-		minUserChars:      200,
-		maxObservations:   80,
-		zoomContextChars:  2500,
+		model:             prefs.ExtractionModel,
+		maxTranscriptChar: prefs.MaxTranscriptChars,
+		minUserTurns:      prefs.MinUserTurns,
+		minUserChars:      prefs.MinUserChars,
+		maxObservations:   prefs.MaxObservations,
+		zoomContextChars:  prefs.ZoomContextChars,
+		noSkip:            prefs.NoSkip,
 	}
-	if err := runExtractWithPaths(s.paths, opts, webRunQuietFor); err != nil {
+	quietFor, err := time.ParseDuration(prefs.QuietFor)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := runExtractWithPaths(s.paths, opts, quietFor); err != nil {
 		log.Printf("run: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -42,6 +42,8 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 
 # 1. Walk recent Claude Code and Codex sessions, emit observations
 ./distill extract --recent 20
+# Or target one product explicitly
+./distill extract --codex --recent 10
 
 # 2. (Later) catch up on everything new since last time
 ./distill extract --new
@@ -75,6 +77,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--product <claude\|codex\|all>` | configured by `install`, default `all` | Which product's sessions to process. |
+| `--codex` / `--claude` | off | Ergonomic aliases for `--product codex` / `--product claude`. |
 | `--session <id>`         | —      | Process one specific session (prefix matches). |
 | `--recent <n>`           | `1`    | Process the N most recent sessions across all projects. |
 | `--new`                  | off    | Process every unprocessed session (combine with `--recent` to cap). |

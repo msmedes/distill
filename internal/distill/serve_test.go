@@ -57,6 +57,11 @@ func TestIndexShowsRunControlWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCodexSession(t, s.paths.codexSessions, "session-1", time.Now().Add(-time.Hour))
+	if err := writeState(s.paths.stateFile, &stateFile{ProcessedSessions: map[string]string{
+		sessionStateKey(productCodex, "session-1"): "2026-05-24T12:30:00Z",
+	}}); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
@@ -66,7 +71,7 @@ func TestIndexShowsRunControlWhenEmpty(t *testing.T) {
 		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	for _, want := range []string{`action="/run"`, "up to 5", "no observations yet"} {
+	for _, want := range []string{`action="/run"`, `href="/sessions"`, "1 session processed", "up to 5", "no observations yet"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
@@ -113,6 +118,159 @@ func TestHelpPageRenders(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("help page missing %q", want)
 		}
+	}
+}
+
+func TestSettingsPageRendersMockConfiguration(t *testing.T) {
+	s := testServer(t)
+	if err := writePreferences(s.paths, preferences{
+		WatchClaude:     true,
+		WatchCodex:      true,
+		AutomaticWatch:  true,
+		PromotionMode:   promotionModeUnified,
+		AlwaysOnPath:    filepath.Join(t.TempDir(), "AGENTS.md"),
+		ClaudeMDPath:    filepath.Join(t.TempDir(), "CLAUDE.md"),
+		CodexAgentsPath: filepath.Join(t.TempDir(), "CODEX_AGENTS.md"),
+		SkillsDir:       filepath.Join(t.TempDir(), "skills"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	rr := httptest.NewRecorder()
+	s.handleSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		"distill<span class=\"dot\">.</span> settings",
+		"extraction",
+		"claude -p",
+		"codex exec",
+		"watched products",
+		"target policy",
+		"diagnostics",
+		"save settings",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("settings page missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSettingsPostPersistsConfiguration(t *testing.T) {
+	s := testServer(t)
+	form := url.Values{
+		"extraction_backend":        {"codex"},
+		"extraction_model":          {"gpt-5.1-codex-max"},
+		"claude_command_path":       {"/usr/local/bin/claude"},
+		"codex_command_path":        {"/usr/local/bin/codex"},
+		"watch_claude":              {"on"},
+		"watch_interval":            {"30m"},
+		"quiet_for":                 {"15m"},
+		"web_run_batch_limit":       {"12"},
+		"min_user_turns":            {"3"},
+		"min_user_chars":            {"250"},
+		"max_transcript_chars":      {"70000"},
+		"max_observations":          {"90"},
+		"zoom_context_chars":        {"3000"},
+		"skip_low_signal":           {"on"},
+		"promotion_mode":            {promotionModeSeparate},
+		"always_on_path":            {filepath.Join(t.TempDir(), "AGENTS.md")},
+		"claude_md_path":            {filepath.Join(t.TempDir(), "CLAUDE.md")},
+		"codex_agents_path":         {filepath.Join(t.TempDir(), "CODEX_AGENTS.md")},
+		"skills_dir":                {filepath.Join(t.TempDir(), "skills")},
+		"project_instructions_file": {"PROJECT_AGENTS.md"},
+		"project_skills_dir":        {".distill/skills"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	s.handleSettings(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
+	}
+	prefs, err := readPreferences(s.paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ExtractionBackend != extractionBackendCodex || prefs.ExtractionModel != "gpt-5.1-codex-max" {
+		t.Fatalf("unexpected backend prefs: %#v", prefs)
+	}
+	if !prefs.WatchClaude || prefs.WatchCodex {
+		t.Fatalf("unexpected watched products: %#v", prefs)
+	}
+	if prefs.WatchInterval != "30m" || prefs.QuietFor != "15m" || prefs.WebRunBatchLimit != 12 {
+		t.Fatalf("unexpected cadence prefs: %#v", prefs)
+	}
+	if prefs.NoSkip {
+		t.Fatal("expected checked skip_low_signal to keep local skip enabled")
+	}
+	if prefs.PromotionMode != promotionModeSeparate || prefs.ProjectInstructionsFile != "PROJECT_AGENTS.md" || prefs.ProjectSkillsDir != ".distill/skills" {
+		t.Fatalf("unexpected target prefs: %#v", prefs)
+	}
+}
+
+func TestSessionsPageRendersProcessedSessions(t *testing.T) {
+	s := testServer(t)
+	if err := writePreferences(s.paths, preferences{WatchClaude: false, WatchCodex: true}); err != nil {
+		t.Fatal(err)
+	}
+	path := writeCodexSessionWithTurns(t, s.paths.codexSessions, "session-abc123", []string{
+		`{"type":"session_meta","payload":{"id":"session-abc123","cwd":"/tmp/distill"}}`,
+		`{"timestamp":"2026-05-24T12:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please wire the processed sessions page into the header."}]}}`,
+		`{"timestamp":"2026-05-24T12:42:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}`,
+	}, time.Date(2026, 5, 24, 12, 45, 0, 0, time.UTC))
+	writeCodexSessionWithTurns(t, s.paths.codexSessions, "session-newer", []string{
+		`{"type":"session_meta","payload":{"id":"session-newer","cwd":"/tmp/distill"}}`,
+		`{"timestamp":"2026-05-25T09:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Newer session should sort first by session time."}]}}`,
+	}, time.Date(2026, 5, 25, 9, 0, 0, 0, time.UTC))
+	if path == "" {
+		t.Fatal("empty session path")
+	}
+	if err := refreshSessionIndex(context.Background(), s.paths, productCodex); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeState(s.paths.stateFile, &stateFile{ProcessedSessions: map[string]string{
+		sessionStateKey(productCodex, "session-abc123"): "2026-05-24T13:00:00Z",
+		sessionStateKey(productCodex, "session-newer"):  "2026-05-24T11:00:00Z",
+		"legacy-claude-session":                         "2026-05-23T13:00:00Z",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rr := httptest.NewRecorder()
+	s.handleSessions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		"distill<span class=\"dot\">.</span> sessions",
+		"3 processed",
+		"codex",
+		"Newer session should sort first by session time.",
+		"Please wire the processed sessions page into the header.",
+		"distill",
+		"42m",
+		"cd &#39;/tmp/distill&#39; &amp;&amp; codex resume &#39;session-newer&#39;",
+		"copy cmd",
+		"source missing",
+		"legacy-",
+		"untitled session",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sessions page missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Index(body, "Newer session should sort first by session time.") > strings.Index(body, "Please wire the processed sessions page into the header.") {
+		t.Fatalf("newer session sorted after older session:\n%s", body)
 	}
 }
 
@@ -483,10 +641,15 @@ func testServer(t *testing.T) *server {
 
 func writeCodexSession(t *testing.T, root, id string, mtime time.Time) {
 	t.Helper()
-	body := strings.Join([]string{
+	writeCodexSessionWithTurns(t, root, id, []string{
 		`{"type":"session_meta","payload":{"id":"` + id + `","cwd":"/tmp/distill"}}`,
 		`{"timestamp":"2026-05-24T12:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"short low signal"}]}}`,
-	}, "\n")
+	}, mtime)
+}
+
+func writeCodexSessionWithTurns(t *testing.T, root, id string, lines []string, mtime time.Time) string {
+	t.Helper()
+	body := strings.Join(lines, "\n")
 	path := filepath.Join(root, id+".jsonl")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -494,4 +657,5 @@ func writeCodexSession(t *testing.T, root, id string, mtime time.Time) {
 	if err := os.Chtimes(path, mtime, mtime); err != nil {
 		t.Fatal(err)
 	}
+	return path
 }

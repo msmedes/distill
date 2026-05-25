@@ -7,22 +7,50 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type preferences struct {
-	WatchClaude     bool   `json:"watch_claude"`
-	WatchCodex      bool   `json:"watch_codex"`
-	AutomaticWatch  bool   `json:"automatic_watch"`
-	PromotionMode   string `json:"promotion_mode"`
-	AlwaysOnPath    string `json:"always_on_path"`
-	ClaudeMDPath    string `json:"claude_md_path"`
-	CodexAgentsPath string `json:"codex_agents_path"`
-	SkillsDir       string `json:"skills_dir"`
+	WatchClaude             bool   `json:"watch_claude"`
+	WatchCodex              bool   `json:"watch_codex"`
+	AutomaticWatch          bool   `json:"automatic_watch"`
+	ExtractionBackend       string `json:"extraction_backend"`
+	ExtractionModel         string `json:"extraction_model"`
+	ClaudeCommandPath       string `json:"claude_command_path"`
+	CodexCommandPath        string `json:"codex_command_path"`
+	WatchInterval           string `json:"watch_interval"`
+	QuietFor                string `json:"quiet_for"`
+	WebRunBatchLimit        int    `json:"web_run_batch_limit"`
+	MinUserTurns            int    `json:"min_user_turns"`
+	MinUserChars            int    `json:"min_user_chars"`
+	MaxTranscriptChars      int    `json:"max_transcript_chars"`
+	MaxObservations         int    `json:"max_observations"`
+	ZoomContextChars        int    `json:"zoom_context_chars"`
+	NoSkip                  bool   `json:"no_skip"`
+	PromotionMode           string `json:"promotion_mode"`
+	AlwaysOnPath            string `json:"always_on_path"`
+	ClaudeMDPath            string `json:"claude_md_path"`
+	CodexAgentsPath         string `json:"codex_agents_path"`
+	SkillsDir               string `json:"skills_dir"`
+	ProjectInstructionsFile string `json:"project_instructions_file"`
+	ProjectSkillsDir        string `json:"project_skills_dir"`
 }
 
 const (
-	promotionModeUnified  = "unified"
-	promotionModeSeparate = "separate"
+	promotionModeUnified           = "unified"
+	promotionModeSeparate          = "separate"
+	extractionBackendClaude        = "claude"
+	extractionBackendCodex         = "codex"
+	defaultWatchInterval           = "1h"
+	defaultQuietFor                = "10m"
+	defaultWebRunBatchLimit        = 5
+	defaultMinUserTurns            = 2
+	defaultMinUserChars            = 200
+	defaultMaxTranscriptChars      = 60_000
+	defaultMaxObservations         = 80
+	defaultZoomContextChars        = 2500
+	defaultProjectInstructionsFile = "AGENTS.md"
+	defaultProjectSkillsDir        = ".agents/skills"
 )
 
 func defaultPreferences() (preferences, error) {
@@ -31,14 +59,26 @@ func defaultPreferences() (preferences, error) {
 		return preferences{}, err
 	}
 	return preferences{
-		WatchClaude:     true,
-		WatchCodex:      true,
-		AutomaticWatch:  true,
-		PromotionMode:   promotionModeUnified,
-		AlwaysOnPath:    filepath.Join(home, ".agents", "AGENTS.md"),
-		ClaudeMDPath:    filepath.Join(home, ".claude", "CLAUDE.md"),
-		CodexAgentsPath: filepath.Join(home, ".codex", "AGENTS.md"),
-		SkillsDir:       filepath.Join(home, ".agents", "skills"),
+		WatchClaude:             true,
+		WatchCodex:              true,
+		AutomaticWatch:          true,
+		ExtractionBackend:       extractionBackendClaude,
+		ExtractionModel:         "haiku",
+		WatchInterval:           defaultWatchInterval,
+		QuietFor:                defaultQuietFor,
+		WebRunBatchLimit:        defaultWebRunBatchLimit,
+		MinUserTurns:            defaultMinUserTurns,
+		MinUserChars:            defaultMinUserChars,
+		MaxTranscriptChars:      defaultMaxTranscriptChars,
+		MaxObservations:         defaultMaxObservations,
+		ZoomContextChars:        defaultZoomContextChars,
+		PromotionMode:           promotionModeUnified,
+		AlwaysOnPath:            filepath.Join(home, ".agents", "AGENTS.md"),
+		ClaudeMDPath:            filepath.Join(home, ".claude", "CLAUDE.md"),
+		CodexAgentsPath:         filepath.Join(home, ".codex", "AGENTS.md"),
+		SkillsDir:               filepath.Join(home, ".agents", "skills"),
+		ProjectInstructionsFile: defaultProjectInstructionsFile,
+		ProjectSkillsDir:        defaultProjectSkillsDir,
 	}, nil
 }
 
@@ -103,8 +143,53 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if prefs.PromotionMode == "" {
 		prefs.PromotionMode = defaults.PromotionMode
 	}
+	if prefs.ExtractionBackend == "" {
+		prefs.ExtractionBackend = defaults.ExtractionBackend
+	}
+	if prefs.ExtractionModel == "" {
+		prefs.ExtractionModel = defaults.ExtractionModel
+	}
+	if strings.TrimSpace(prefs.WatchInterval) == "" {
+		prefs.WatchInterval = defaults.WatchInterval
+	}
+	if strings.TrimSpace(prefs.QuietFor) == "" {
+		prefs.QuietFor = defaults.QuietFor
+	}
+	if prefs.WebRunBatchLimit <= 0 {
+		prefs.WebRunBatchLimit = defaults.WebRunBatchLimit
+	}
+	if prefs.MinUserTurns <= 0 {
+		prefs.MinUserTurns = defaults.MinUserTurns
+	}
+	if prefs.MinUserChars <= 0 {
+		prefs.MinUserChars = defaults.MinUserChars
+	}
+	if prefs.MaxTranscriptChars <= 0 {
+		prefs.MaxTranscriptChars = defaults.MaxTranscriptChars
+	}
+	if prefs.MaxObservations <= 0 {
+		prefs.MaxObservations = defaults.MaxObservations
+	}
+	if prefs.ZoomContextChars <= 0 {
+		prefs.ZoomContextChars = defaults.ZoomContextChars
+	}
+	if strings.TrimSpace(prefs.ProjectInstructionsFile) == "" {
+		prefs.ProjectInstructionsFile = defaults.ProjectInstructionsFile
+	}
+	if strings.TrimSpace(prefs.ProjectSkillsDir) == "" {
+		prefs.ProjectSkillsDir = defaults.ProjectSkillsDir
+	}
 	if prefs.PromotionMode != promotionModeUnified && prefs.PromotionMode != promotionModeSeparate {
 		return preferences{}, fmt.Errorf("promotion mode must be %q or %q: %s", promotionModeUnified, promotionModeSeparate, prefs.PromotionMode)
+	}
+	if prefs.ExtractionBackend != extractionBackendClaude && prefs.ExtractionBackend != extractionBackendCodex {
+		return preferences{}, fmt.Errorf("extraction backend must be %q or %q: %s", extractionBackendClaude, extractionBackendCodex, prefs.ExtractionBackend)
+	}
+	if _, err := time.ParseDuration(prefs.WatchInterval); err != nil {
+		return preferences{}, fmt.Errorf("watch interval must be a Go duration: %w", err)
+	}
+	if _, err := time.ParseDuration(prefs.QuietFor); err != nil {
+		return preferences{}, fmt.Errorf("session idle time must be a Go duration: %w", err)
 	}
 	if !prefs.WatchClaude && !prefs.WatchCodex {
 		prefs.WatchClaude = defaults.WatchClaude
@@ -126,6 +211,14 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if err != nil {
 		return preferences{}, err
 	}
+	claudeCommand, err := expandOptionalCommandPath(strings.TrimSpace(prefs.ClaudeCommandPath))
+	if err != nil {
+		return preferences{}, err
+	}
+	codexCommand, err := expandOptionalCommandPath(strings.TrimSpace(prefs.CodexCommandPath))
+	if err != nil {
+		return preferences{}, err
+	}
 	if !filepath.IsAbs(alwaysOnPath) {
 		return preferences{}, fmt.Errorf("always-on path must be absolute: %s", prefs.AlwaysOnPath)
 	}
@@ -138,11 +231,38 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if !filepath.IsAbs(skillsDir) {
 		return preferences{}, fmt.Errorf("skills directory must be absolute: %s", prefs.SkillsDir)
 	}
+	if filepath.IsAbs(prefs.ProjectInstructionsFile) || strings.Contains(prefs.ProjectInstructionsFile, string(filepath.Separator)) {
+		return preferences{}, fmt.Errorf("project instructions file must be a filename, not a path: %s", prefs.ProjectInstructionsFile)
+	}
+	if filepath.IsAbs(prefs.ProjectSkillsDir) {
+		return preferences{}, fmt.Errorf("project skills directory must be relative: %s", prefs.ProjectSkillsDir)
+	}
 	prefs.AlwaysOnPath = filepath.Clean(alwaysOnPath)
 	prefs.ClaudeMDPath = filepath.Clean(claudePath)
 	prefs.CodexAgentsPath = filepath.Clean(codexPath)
 	prefs.SkillsDir = filepath.Clean(skillsDir)
+	prefs.ClaudeCommandPath = claudeCommand
+	prefs.CodexCommandPath = codexCommand
+	prefs.ProjectInstructionsFile = filepath.Clean(prefs.ProjectInstructionsFile)
+	prefs.ProjectSkillsDir = filepath.Clean(prefs.ProjectSkillsDir)
 	return prefs, nil
+}
+
+func expandOptionalCommandPath(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	expanded, err := expandHomePath(path)
+	if err != nil {
+		return "", err
+	}
+	if strings.Contains(expanded, string(filepath.Separator)) && !filepath.IsAbs(expanded) {
+		return "", fmt.Errorf("command path must be absolute or a command name: %s", path)
+	}
+	if filepath.IsAbs(expanded) {
+		return filepath.Clean(expanded), nil
+	}
+	return expanded, nil
 }
 
 func (p preferences) watchProduct() product {
@@ -208,7 +328,7 @@ func (p preferences) promotionTarget(o observation, artifact string, requested o
 			return promotionTarget{
 				Artifact: artifact,
 				Scope:    scope,
-				Path:     filepath.Join(o.ProjectCWD, ".agents", "skills"),
+				Path:     filepath.Join(o.ProjectCWD, p.projectSkillsDir()),
 			}, nil
 		}
 		return promotionTarget{
@@ -222,7 +342,7 @@ func (p preferences) promotionTarget(o observation, artifact string, requested o
 
 func (p preferences) agentsPathForScope(o observation, scope observationScope) string {
 	if scope == scopeProject {
-		return filepath.Join(o.ProjectCWD, "AGENTS.md")
+		return filepath.Join(o.ProjectCWD, p.projectInstructionsFile())
 	}
 	if p.PromotionMode == promotionModeUnified {
 		return p.AlwaysOnPath
@@ -235,6 +355,20 @@ func (p preferences) agentsPathForScope(o observation, scope observationScope) s
 	default:
 		return p.AlwaysOnPath
 	}
+}
+
+func (p preferences) projectInstructionsFile() string {
+	if strings.TrimSpace(p.ProjectInstructionsFile) == "" {
+		return defaultProjectInstructionsFile
+	}
+	return p.ProjectInstructionsFile
+}
+
+func (p preferences) projectSkillsDir() string {
+	if strings.TrimSpace(p.ProjectSkillsDir) == "" {
+		return defaultProjectSkillsDir
+	}
+	return p.ProjectSkillsDir
 }
 
 func primaryObservationProduct(o observation) product {

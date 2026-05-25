@@ -27,7 +27,7 @@ var promptsFS embed.FS
 const usage = `distill — extract observations about you from Claude Code and Codex sessions
 
 Usage:
-  distill extract    [--product claude|codex|all] [--session <id>] [--recent <n>] [--new] [--dry-run] [--model haiku|sonnet]
+  distill extract    [--codex|--claude|--product claude|codex|all] [--session <id>] [--recent <n>] [--new] [--dry-run] [--model haiku|sonnet]
   distill watch      [--product claude|codex|all] [--interval 1h] [--quiet-for 10m]
   distill synthesize [--model haiku|sonnet|opus]
   distill list
@@ -39,6 +39,7 @@ Usage:
 
 Examples:
   distill extract                    # process the most recent session
+  distill extract --codex            # process the most recent Codex session
   distill extract --product codex    # process the most recent Codex session
   distill extract --recent 5         # process the 5 most recent sessions
   distill extract --new              # process every unprocessed session

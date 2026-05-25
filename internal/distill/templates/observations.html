@@ -649,7 +649,9 @@
     <div class="meta">
       {{.ObservationCount}} observation{{if ne .ObservationCount 1}}s{{end}}
       <span class="sep">·</span>
-      {{.SessionsProcessed}} session{{if ne .SessionsProcessed 1}}s{{end}} processed
+      <a href="/sessions">{{.SessionsProcessed}} session{{if ne .SessionsProcessed 1}}s{{end}} processed</a>
+      <span class="sep">·</span>
+      <a href="/settings">settings</a>
       <span class="sep">·</span>
       <a href="/help">help</a>
     </div>

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>distill sessions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-soft: #6b6b6b;
+      --fg-faint: #a8a8a8;
+      --bg: #fafaf9;
+      --bg-card: #ffffff;
+      --bg-card-muted: #f5f4f2;
+      --border: #e7e5e4;
+      --border-soft: #f0efed;
+      --accent: #b45309;
+      --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --sans: -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 28px;
+      gap: 12px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
+    h1 .dot { color: var(--accent); }
+    .meta {
+      font-size: 12px;
+      color: var(--fg-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .meta a {
+      color: var(--fg-soft);
+      text-decoration: none;
+    }
+    .meta a:hover { color: var(--fg); }
+    .sessions {
+      display: grid;
+      gap: 8px;
+    }
+    .session {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr) 136px 112px auto;
+      gap: 12px;
+      align-items: start;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+    }
+    .product {
+      justify-self: start;
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: lowercase;
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--bg-card-muted);
+      color: var(--fg-soft);
+    }
+    .title {
+      min-width: 0;
+    }
+    .title strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+      font-weight: 500;
+    }
+    .submeta, .time {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      font-variant-numeric: tabular-nums;
+    }
+    .submeta span + span::before {
+      content: "·";
+      color: var(--border);
+      padding: 0 6px;
+    }
+    .time {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .time b {
+      display: block;
+      color: var(--fg-soft);
+      font-weight: 400;
+    }
+    .copy {
+      justify-self: end;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 9px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg-soft);
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: lowercase;
+      transition: color 0.12s, border-color 0.12s, transform 0.08s;
+    }
+    .copy:hover {
+      color: var(--fg);
+      border-color: var(--fg-soft);
+    }
+    .copy:active { transform: scale(0.96); }
+    .copy.copied {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .copy.failed {
+      color: #991b1b;
+      border-color: #991b1b;
+    }
+    .missing {
+      justify-self: end;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-faint);
+      white-space: nowrap;
+    }
+    .empty {
+      text-align: center;
+      padding: 80px 0;
+      color: var(--fg-soft);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    @media (max-width: 760px) {
+      header.top {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .session {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .time {
+        text-align: left;
+        white-space: normal;
+      }
+      .copy {
+        justify-self: start;
+      }
+      .missing {
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>distill<span class="dot">.</span> sessions</h1>
+    <div class="meta"><a href="/">observations</a> · <a href="/settings">settings</a> · {{.Count}} processed</div>
+  </header>
+
+  {{if .Sessions}}
+  <main class="sessions">
+    {{range .Sessions}}
+    <article class="session">
+      <span class="product">{{.Product}}</span>
+      <div class="title">
+        <strong>{{.Title}}</strong>
+        <div class="submeta">
+          <span>{{.ShortID}}</span>
+          {{if .Project}}<span>{{.Project}}</span>{{end}}
+          {{if .Length}}<span>{{.Length}}</span>{{end}}
+        </div>
+      </div>
+      <div class="time">
+        <b>session</b>
+        {{if .SessionTime}}{{shortTime .SessionTime}}{{else}}unknown{{end}}
+      </div>
+      <div class="time">
+        <b>processed</b>
+        {{shortTime .ProcessedAt}}
+      </div>
+      {{if .Command}}<button class="copy" type="button" data-copy="{{.Command}}" title="{{.Command}}">copy cmd</button>{{else}}<span class="missing">source missing</span>{{end}}
+    </article>
+    {{end}}
+  </main>
+  {{else}}
+  <div class="empty">no processed sessions yet</div>
+  {{end}}
+</div>
+<script>
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    const text = button.dataset.copy;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      const fallback = document.createElement("textarea");
+      fallback.value = text;
+      fallback.style.position = "fixed";
+      fallback.style.left = "-9999px";
+      document.body.appendChild(fallback);
+      fallback.focus();
+      fallback.select();
+      copied = document.execCommand("copy");
+      fallback.remove();
+    }
+    const original = button.textContent;
+    button.textContent = copied ? "copied" : "copy failed";
+    button.classList.add(copied ? "copied" : "failed");
+    window.setTimeout(() => {
+      button.textContent = original;
+      button.classList.remove("copied", "failed");
+    }, 1200);
+  });
+</script>
+</body>
+</html>
