@@ -32,7 +32,7 @@
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
     header.top {
       display: flex;
       justify-content: space-between;
@@ -46,7 +46,8 @@
       font-weight: 600;
       margin: 0;
       font-family: var(--mono);
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
+      text-wrap: balance;
     }
     h1 .dot { color: var(--accent); }
     .meta {
@@ -171,6 +172,7 @@
       grid-row: 1 / span 2;
       font-family: var(--mono);
       font-size: 11px;
+      min-height: 40px;
       padding: 5px 10px;
       border: 1px solid var(--border);
       background: var(--bg);
@@ -178,11 +180,13 @@
       border-radius: 4px;
       cursor: pointer;
       text-transform: lowercase;
+      transition: color 0.12s, border-color 0.12s, transform 0.08s;
     }
     .settings-form button:hover {
       color: var(--fg);
       border-color: var(--fg-soft);
     }
+    .settings-form button:active { transform: scale(0.96); }
     .settings-faq {
       grid-column: 1 / -1;
       margin: 4px 0 0;
@@ -229,6 +233,7 @@
       font-family: var(--mono);
       font-size: 11px;
       text-transform: lowercase;
+      min-height: 40px;
       padding: 3px 10px;
       border: 1px solid var(--border);
       border-radius: 999px;
@@ -237,6 +242,7 @@
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 5px;
       letter-spacing: 0;
     }
@@ -269,12 +275,16 @@
       font-family: var(--mono);
       font-size: 11px;
       text-transform: lowercase;
+      min-height: 40px;
       padding: 3px 8px;
       border: 1px solid var(--border);
       border-radius: 999px;
       background: transparent;
       color: var(--fg-soft);
       text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       transition: color 0.12s, border-color 0.12s, background-color 0.12s, transform 0.08s;
     }
     .filter.active {
@@ -508,6 +518,8 @@
       text-decoration: none;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      min-height: 40px;
       transition: color 0.12s, border-color 0.12s, transform 0.08s;
     }
     .actions button:hover, .btn:hover {

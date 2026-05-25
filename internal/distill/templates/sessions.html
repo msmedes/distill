@@ -36,7 +36,7 @@
       align-items: baseline;
       border-bottom: 1px solid var(--border);
       padding-bottom: 16px;
-      margin-bottom: 28px;
+      margin-bottom: 32px;
       gap: 12px;
     }
     h1 {
@@ -44,7 +44,8 @@
       font-weight: 600;
       margin: 0;
       font-family: var(--mono);
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
+      text-wrap: balance;
     }
     h1 .dot { color: var(--accent); }
     .meta {
@@ -117,6 +118,7 @@
       justify-self: end;
       font-family: var(--mono);
       font-size: 11px;
+      min-height: 40px;
       padding: 4px 9px;
       border: 1px solid var(--border);
       background: var(--bg);
@@ -124,6 +126,9 @@
       border-radius: 4px;
       cursor: pointer;
       text-transform: lowercase;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       transition: color 0.12s, border-color 0.12s, transform 0.08s;
     }
     .copy:hover {

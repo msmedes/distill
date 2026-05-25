@@ -30,14 +30,14 @@
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-    .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
     header.top {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
       border-bottom: 1px solid var(--border);
       padding-bottom: 16px;
-      margin-bottom: 28px;
+      margin-bottom: 32px;
       gap: 12px;
     }
     h1, h2, h3, p { margin: 0; }
@@ -45,7 +45,8 @@
       font-size: 18px;
       font-weight: 600;
       font-family: var(--mono);
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
+      text-wrap: balance;
     }
     h1 .dot { color: var(--accent); }
     .meta {
@@ -60,7 +61,7 @@
     .meta a:hover { color: var(--fg); }
     .layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 280px;
+      grid-template-columns: minmax(0, 1fr) 260px;
       gap: 18px;
       align-items: start;
     }
@@ -84,7 +85,7 @@
     }
     .row {
       display: grid;
-      grid-template-columns: 170px minmax(0, 1fr);
+      grid-template-columns: 160px minmax(0, 1fr);
       gap: 12px;
       align-items: start;
       min-width: 0;
@@ -167,7 +168,7 @@
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      min-height: 32px;
+      min-height: 40px;
       padding: 5px 9px;
       border: 1px solid var(--border);
       border-radius: 4px;
@@ -197,6 +198,9 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
+    }
+    aside .mini-grid {
+      grid-template-columns: 1fr;
     }
     .metric {
       border: 1px solid var(--border-soft);
@@ -266,6 +270,7 @@
     button {
       font-family: var(--mono);
       font-size: 11px;
+      min-height: 40px;
       padding: 6px 11px;
       border: 1px solid var(--border);
       background: var(--bg);
@@ -273,12 +278,23 @@
       border-radius: 4px;
       cursor: pointer;
       text-transform: lowercase;
+      transition: color 0.12s, border-color 0.12s, background-color 0.12s, transform 0.08s;
     }
     button.primary {
       background: var(--fg);
       border-color: var(--fg);
       color: var(--bg);
     }
+    button:hover {
+      color: var(--fg);
+      border-color: var(--fg-soft);
+    }
+    button.primary:hover {
+      background: #2a2a2a;
+      border-color: #2a2a2a;
+      color: var(--bg);
+    }
+    button:active { transform: scale(0.96); }
     button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
