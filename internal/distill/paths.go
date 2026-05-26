@@ -14,6 +14,7 @@ type paths struct {
 	preferencesFile  string
 	sessionIndexFile string
 	candidatesDir    string
+	internalCallsDir string
 }
 
 func resolvePaths() (paths, error) {
@@ -31,6 +32,7 @@ func resolvePaths() (paths, error) {
 		preferencesFile:  filepath.Join(stateDir, "preferences.json"),
 		sessionIndexFile: filepath.Join(stateDir, "sessions.db"),
 		candidatesDir:    filepath.Join(stateDir, "candidates"),
+		internalCallsDir: filepath.Join(stateDir, "internal-model-calls"),
 	}, nil
 }
 

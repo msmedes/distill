@@ -249,12 +249,25 @@ func processOne(st store, state *stateFile, s sessionMeta, opts extractOpts) err
 	}
 	fmt.Printf("── %s:%s (%s)\n", s.product, shortID(s.sessionID), cwdLabel)
 
+	if isInternalSessionMeta(s, st.paths) {
+		fmt.Println("  internal distill model-call session — skipping")
+		markProcessed(st, state, s, opts.dryRun)
+		fmt.Println()
+		return nil
+	}
+
 	turns, err := parseSessionTranscript(s)
 	if err != nil {
 		return fmt.Errorf("parsing transcript: %w", err)
 	}
 	if len(turns) == 0 {
 		fmt.Println("  (no user/assistant turns — skipping)")
+		markProcessed(st, state, s, opts.dryRun)
+		fmt.Println()
+		return nil
+	}
+	if isInternalExtractionSession(turns) {
+		fmt.Println("  internal distill extraction session — skipping")
 		markProcessed(st, state, s, opts.dryRun)
 		fmt.Println()
 		return nil
@@ -554,6 +567,46 @@ func shouldSkipExtraction(s transcriptSignal, opts extractOpts) bool {
 		return false
 	}
 	return s.userTurns < opts.minUserTurns || s.userChars < opts.minUserChars
+}
+
+func isInternalSessionMeta(s sessionMeta, p paths) bool {
+	if strings.TrimSpace(s.cwd) == "" || strings.TrimSpace(p.internalCallsDir) == "" {
+		return false
+	}
+	return samePathOrWithin(s.cwd, p.internalCallsDir)
+}
+
+func samePathOrWithin(path, dir string) bool {
+	return filepath.Clean(path) == filepath.Clean(dir) || pathWithinDir(path, dir)
+}
+
+func isInternalExtractionSession(turns []transcriptTurn) bool {
+	for _, t := range turns {
+		if t.role != "user" {
+			continue
+		}
+		return isInternalExtractionPrompt(t.text)
+	}
+	return false
+}
+
+func isInternalExtractionPrompt(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "# Observation extraction") {
+		return false
+	}
+	markers := []string{
+		"You are reading user-authored turns from a single coding-agent session",
+		"You are reading a transcript of a single coding session",
+		"Output the JSON object now",
+	}
+	matches := 0
+	for _, marker := range markers {
+		if strings.Contains(trimmed, marker) {
+			matches++
+		}
+	}
+	return matches >= 2
 }
 
 func hasExtractionSignalMarker(text string) bool {

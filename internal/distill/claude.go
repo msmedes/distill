@@ -43,9 +43,12 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 		"--no-session-persistence",
 		"--disable-slash-commands",
 	}
-	cmd := exec.CommandContext(ctx, claudePath, args...)
+	cmd, err := internalHarnessCommand(ctx, claudePath, args...)
+	if err != nil {
+		return "", err
+	}
 	cmd.Stdin = strings.NewReader(prompt)
-	cmd.Env = append(env, "DISTILL_INTERNAL=1")
+	cmd.Env = internalHarnessEnv(env)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -72,9 +75,12 @@ func callExtractor(ctx context.Context, prefs preferences, model string, prompt 
 			"--no-session-persistence",
 			"--disable-slash-commands",
 		}
-		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd, err := internalHarnessCommand(ctx, claudePath, args...)
+		if err != nil {
+			return "", err
+		}
 		cmd.Stdin = strings.NewReader(prompt)
-		cmd.Env = append(env, "DISTILL_INTERNAL=1")
+		cmd.Env = internalHarnessEnv(env)
 
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -105,9 +111,12 @@ func callCodexExec(ctx context.Context, prefs preferences, model string, prompt 
 		args = append(args, "--model", model)
 	}
 	args = append(args, "-")
-	cmd := exec.CommandContext(ctx, codexPath, args...)
+	cmd, err := internalHarnessCommand(ctx, codexPath, args...)
+	if err != nil {
+		return "", err
+	}
 	cmd.Stdin = strings.NewReader(prompt)
-	cmd.Env = append(env, "DISTILL_INTERNAL=1")
+	cmd.Env = internalHarnessEnv(env)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -120,6 +129,31 @@ func callCodexExec(ctx context.Context, prefs preferences, model string, prompt 
 		return strings.TrimSpace(string(b)), nil
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func internalHarnessCommand(ctx context.Context, path string, args ...string) (*exec.Cmd, error) {
+	dir, err := internalHarnessDir()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Dir = dir
+	return cmd, nil
+}
+
+func internalHarnessDir() (string, error) {
+	p, err := resolvePaths()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(p.internalCallsDir, 0o755); err != nil {
+		return "", err
+	}
+	return p.internalCallsDir, nil
+}
+
+func internalHarnessEnv(env []string) []string {
+	return append(env, "DISTILL_INTERNAL=1")
 }
 
 func resolveClaudeCommand(override string) (string, []string) {

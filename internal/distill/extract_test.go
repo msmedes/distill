@@ -25,6 +25,119 @@ func TestShouldSkipExtractionRequiresEnoughUserSignal(t *testing.T) {
 	}
 }
 
+func TestInternalExtractionSessionSkipsExtractorAndMarksProcessed(t *testing.T) {
+	dir := t.TempDir()
+	p := paths{
+		stateDir:        filepath.Join(dir, "state"),
+		stateFile:       filepath.Join(dir, "state", "state.json"),
+		observationFile: filepath.Join(dir, "state", "observations.jsonl"),
+	}
+	st := newStore(p)
+	state := &stateFile{ProcessedSessions: map[string]string{}}
+	sessionPath := filepath.Join(dir, "internal.jsonl")
+	body := strings.Join([]string{
+		`{"type":"user","uuid":"user-1","message":{"content":[{"type":"text","text":"# Observation extraction\n\nYou are reading user-authored turns from a single coding-agent session between a developer and Claude Code or Codex.\n\nOutput the JSON object now."}]}}`,
+		`{"type":"assistant","uuid":"assistant-1","message":{"content":[{"type":"text","text":"{\"reasoning\":\"nothing notable\",\"new_observations\":[],\"reinforced\":[],\"contradicted\":[]}"}]}}`,
+	}, "\n")
+	if err := os.WriteFile(sessionPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := processOne(st, state, sessionMeta{
+		product:   productClaude,
+		sessionID: "internal-session",
+		filePath:  sessionPath,
+		cwd:       "/tmp/distill",
+	}, extractOpts{minUserTurns: 2, minUserChars: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	persisted, err := readState(p.stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processedSession(persisted, sessionMeta{product: productClaude, sessionID: "internal-session"}) {
+		t.Fatalf("expected internal extraction session to be marked processed: %#v", persisted)
+	}
+	if _, err := os.Stat(p.observationFile); !os.IsNotExist(err) {
+		t.Fatalf("expected no observations file write, got err=%v", err)
+	}
+}
+
+func TestInternalModelCallCWDMarksSessionProcessedBeforeParsing(t *testing.T) {
+	dir := t.TempDir()
+	internalDir := filepath.Join(dir, "state", "internal-model-calls")
+	p := paths{
+		stateDir:         filepath.Join(dir, "state"),
+		stateFile:        filepath.Join(dir, "state", "state.json"),
+		observationFile:  filepath.Join(dir, "state", "observations.jsonl"),
+		internalCallsDir: internalDir,
+	}
+	st := newStore(p)
+	state := &stateFile{ProcessedSessions: map[string]string{}}
+	missingSessionPath := filepath.Join(dir, "does-not-exist.jsonl")
+
+	err := processOne(st, state, sessionMeta{
+		product:   productClaude,
+		sessionID: "internal-cwd-session",
+		filePath:  missingSessionPath,
+		cwd:       internalDir,
+	}, extractOpts{minUserTurns: 2, minUserChars: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	persisted, err := readState(p.stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processedSession(persisted, sessionMeta{product: productClaude, sessionID: "internal-cwd-session"}) {
+		t.Fatalf("expected internal cwd session to be marked processed: %#v", persisted)
+	}
+}
+
+func TestInternalModelCallCWDMarksCodexSessionProcessedBeforeParsing(t *testing.T) {
+	dir := t.TempDir()
+	internalDir := filepath.Join(dir, "state", "internal-model-calls")
+	p := paths{
+		stateDir:         filepath.Join(dir, "state"),
+		stateFile:        filepath.Join(dir, "state", "state.json"),
+		observationFile:  filepath.Join(dir, "state", "observations.jsonl"),
+		internalCallsDir: internalDir,
+	}
+	st := newStore(p)
+	state := &stateFile{ProcessedSessions: map[string]string{}}
+	missingSessionPath := filepath.Join(dir, "does-not-exist.jsonl")
+
+	err := processOne(st, state, sessionMeta{
+		product:   productCodex,
+		sessionID: "codex-internal-cwd-session",
+		filePath:  missingSessionPath,
+		cwd:       filepath.Join(internalDir, "nested"),
+	}, extractOpts{minUserTurns: 2, minUserChars: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	persisted, err := readState(p.stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processedSession(persisted, sessionMeta{product: productCodex, sessionID: "codex-internal-cwd-session"}) {
+		t.Fatalf("expected internal Codex cwd session to be marked processed: %#v", persisted)
+	}
+}
+
+func TestInternalExtractionPromptDetectionIsNarrow(t *testing.T) {
+	if !isInternalExtractionPrompt("# Observation extraction\n\nYou are reading a transcript of a single coding session.\n\nOutput the JSON object now.") {
+		t.Fatal("expected bundled extraction prompt to be recognized")
+	}
+	if isInternalExtractionPrompt("# Observation extraction\n\nCan you help me design an observation extraction feature?") {
+		t.Fatal("did not expect a user discussion of observation extraction to be treated as internal")
+	}
+}
+
 func TestExtractProductSelectionAcceptsErgonomicProductFlags(t *testing.T) {
 	tests := []struct {
 		name        string
