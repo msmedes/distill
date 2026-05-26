@@ -584,7 +584,7 @@ func generateSkill(ctx context.Context, o observation) (generatedSkill, error) {
 		ctx, cancel = context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 	}
-	raw, err := callClaude(ctx, modelSonnet, prompt)
+	raw, err := callClaude(ctx, modelOpus, prompt)
 	if err != nil {
 		return generatedSkill{}, err
 	}
