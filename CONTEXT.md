@@ -25,8 +25,12 @@ The per-session pass. Reads one session's transcript and emits observation delta
 _Avoid_: parse, ingest, ingest.
 
 **Watch**:
-The automatic ingestion loop. Polls Claude Code and Codex transcript directories, ignores recently modified files, and runs Extract for quiet unprocessed sessions. This is the canonical automation model; distill does not install product-specific session hooks. A normal install can bootstrap a bounded recent slice, then records the rest of the existing quiet backlog in `state.json` so Watch starts from future sessions instead of backfilling the whole machine.
+The automatic ingestion loop. Polls Claude Code and Codex transcript directories, ignores recently modified files, and runs Extract for quiet unprocessed sessions. This is the canonical automation model; distill does not install product-specific session hooks. See **Bootstrap** for how install seeds the store and baselines the existing backlog so Watch starts from future Sessions.
 _Avoid_: hook, daemon (unless discussing process supervision).
+
+**Bootstrap**:
+The install-time seeding step. The user chooses how many of their most-recent quiet Sessions to Extract (default 15; 0 to skip). All remaining quiet Sessions are marked processed in `state.json` without running Extract, so Watch starts at "now" instead of replaying history. Bounds first-run LLM cost without losing visibility into recent context.
+_Avoid_: backfill (Bootstrap is bounded by design; backfill implies the opposite).
 
 **Synthesize**:
 The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to portable skills or instructions at user or project scope. Expensive (Sonnet), runs only when the user asks.

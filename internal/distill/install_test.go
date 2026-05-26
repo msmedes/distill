@@ -34,8 +34,8 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	if !prefs.AutomaticWatch {
 		t.Fatal("expected automatic watcher by default")
 	}
-	if !plan.bootstrapRecent {
-		t.Fatal("expected recent bootstrap by default")
+	if plan.bootstrapCount != installBootstrapRecentLimit {
+		t.Fatalf("expected default bootstrap count %d, got %d", installBootstrapRecentLimit, plan.bootstrapCount)
 	}
 	if prefs.AlwaysOnPath != filepath.Join(home, ".agents", "AGENTS.md") {
 		t.Fatalf("unexpected always-on path: %s", prefs.AlwaysOnPath)
@@ -43,7 +43,7 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	if !strings.Contains(out.String(), "Watch Claude Code? [Y/n]") {
 		t.Fatalf("expected Claude prompt, got %q", out.String())
 	}
-	if !strings.Contains(out.String(), "Process your 15 most recent quiet sessions now? [Y/n]") {
+	if !strings.Contains(out.String(), "Process recent quiet sessions now? (0 to skip) [15]") {
 		t.Fatalf("expected bootstrap prompt, got %q", out.String())
 	}
 }
@@ -56,7 +56,7 @@ func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
 	}
 	var out bytes.Buffer
 
-	plan, err := promptInstallPlan(strings.NewReader("y\ny\nn\nn\nn\n"), &out, defaults)
+	plan, err := promptInstallPlan(strings.NewReader("y\ny\nn\n0\nn\n"), &out, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +65,8 @@ func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
 	if prefs.PromotionMode != promotionModeSeparate {
 		t.Fatalf("expected separate promotion mode, got %s", prefs.PromotionMode)
 	}
-	if plan.bootstrapRecent {
-		t.Fatal("expected recent bootstrap disabled")
+	if plan.bootstrapCount != 0 {
+		t.Fatalf("expected bootstrap count 0, got %d", plan.bootstrapCount)
 	}
 	if prefs.AutomaticWatch {
 		t.Fatal("expected automatic watcher disabled")

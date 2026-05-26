@@ -61,10 +61,10 @@ State and source files
 Important commands
   distill install
     Interactive setup. Chooses watched products, promotion destinations, and
-    whether launchd should run distill watch at login. Setup recommends
-    processing the 15 most recent quiet sessions, then marks the rest of the
-    existing quiet backlog processed so automatic watching starts from "now"
-    instead of backfilling every historical session.
+    whether launchd should run distill watch at login. Setup asks how many
+    recent quiet sessions to process (default 15; 0 to skip), then marks the
+    rest of the existing quiet backlog processed so automatic watching starts
+    from "now" instead of backfilling every historical session.
 
   distill extract --recent N
     Processes the N most recent sessions across the selected products.

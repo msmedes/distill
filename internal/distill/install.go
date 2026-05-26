@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,8 +18,8 @@ const launchdLabel = "com.msmedes.distill.watch"
 const installBootstrapRecentLimit = 15
 
 type installPlan struct {
-	preferences     preferences
-	bootstrapRecent bool
+	preferences    preferences
+	bootstrapCount int
 }
 
 var launchctl = func(args ...string) error {
@@ -52,7 +53,7 @@ func runInstall(args []string) error {
 		return err
 	}
 	prefs := defaults
-	plan := installPlan{preferences: prefs}
+	plan := installPlan{preferences: prefs, bootstrapCount: installBootstrapRecentLimit}
 	if !*nonInteractive {
 		plan, err = promptInstallPlan(os.Stdin, os.Stdout, defaults)
 		if err != nil {
@@ -68,7 +69,7 @@ func runInstall(args []string) error {
 	if err := writePreferences(p, prefs); err != nil {
 		return err
 	}
-	if err := bootstrapInstallSessions(p, prefs, plan.bootstrapRecent, os.Stdout); err != nil {
+	if err := bootstrapInstallSessions(p, prefs, plan.bootstrapCount, os.Stdout); err != nil {
 		return err
 	}
 	if err := configureLaunchdWatcher(prefs); err != nil {
@@ -112,7 +113,7 @@ func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (insta
 	} else {
 		prefs.PromotionMode = promotionModeSeparate
 	}
-	bootstrapRecent, err := promptBool(reader, out, fmt.Sprintf("Process your %d most recent quiet sessions now?", installBootstrapRecentLimit), true)
+	bootstrapCount, err := promptInt(reader, out, "Process recent quiet sessions now? (0 to skip)", installBootstrapRecentLimit)
 	if err != nil {
 		return installPlan{}, err
 	}
@@ -125,7 +126,29 @@ func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (insta
 	if err != nil {
 		return installPlan{}, err
 	}
-	return installPlan{preferences: prefs, bootstrapRecent: bootstrapRecent}, nil
+	return installPlan{preferences: prefs, bootstrapCount: bootstrapCount}, nil
+}
+
+func promptInt(reader *bufio.Reader, out io.Writer, question string, defaultValue int) (int, error) {
+	suffix := fmt.Sprintf(" [%d] ", defaultValue)
+	for {
+		fmt.Fprint(out, question, suffix)
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return 0, err
+		}
+		answer := strings.TrimSpace(line)
+		if answer == "" {
+			return defaultValue, nil
+		}
+		if n, parseErr := strconv.Atoi(answer); parseErr == nil && n >= 0 {
+			return n, nil
+		}
+		fmt.Fprintln(out, "please enter a non-negative integer")
+		if errors.Is(err, io.EOF) {
+			return defaultValue, nil
+		}
+	}
 }
 
 func promptBool(reader *bufio.Reader, out io.Writer, question string, defaultYes bool) (bool, error) {
@@ -196,16 +219,16 @@ func ensureInstallTargets(prefs preferences) error {
 	return os.MkdirAll(prefs.SkillsDir, 0o755)
 }
 
-func bootstrapInstallSessions(p paths, prefs preferences, bootstrapRecent bool, out io.Writer) error {
+func bootstrapInstallSessions(p paths, prefs preferences, bootstrapCount int, out io.Writer) error {
 	quietFor, err := time.ParseDuration(prefs.QuietFor)
 	if err != nil {
 		return err
 	}
-	if bootstrapRecent {
-		fmt.Fprintf(out, "bootstrap: processing up to %d recent quiet session(s)\n", installBootstrapRecentLimit)
+	if bootstrapCount > 0 {
+		fmt.Fprintf(out, "bootstrap: processing up to %d recent quiet session(s)\n", bootstrapCount)
 		opts := extractOpts{
 			product:           prefs.watchProduct(),
-			recent:            installBootstrapRecentLimit,
+			recent:            bootstrapCount,
 			onlyNew:           true,
 			model:             prefs.ExtractionModel,
 			maxTranscriptChar: prefs.MaxTranscriptChars,
