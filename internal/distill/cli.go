@@ -27,6 +27,7 @@ var promptsFS embed.FS
 const usage = `distill — extract observations about you from Claude Code and Codex sessions
 
 Usage:
+  distill agents                                                       # operating guide for coding agents — start here
   distill extract    [--codex|--claude|--product claude|codex|all] [--session <id>] [--recent <n>] [--new] [--dry-run] [--model haiku|sonnet]
   distill watch      [--product claude|codex|all] [--interval 1h] [--quiet-for 10m]
   distill synthesize [--model haiku|sonnet|opus]
@@ -34,10 +35,10 @@ Usage:
   distill serve      [--port <n>] [--host <addr>]
   distill compact
   distill install    [--yes]
-  distill agents
   distill version
 
 Examples:
+  distill agents                     # operating guide for coding agents — start here
   distill extract                    # process the most recent session
   distill extract --codex            # process the most recent Codex session
   distill extract --product codex    # process the most recent Codex session
@@ -49,7 +50,6 @@ Examples:
   distill install                    # configure watcher and promotion destinations
   distill list                       # show accumulated observations
   distill serve                      # browse observations in your browser
-  distill agents                     # detailed operating guide for coding agents
 `
 
 func Main(args []string) int {

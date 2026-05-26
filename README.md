@@ -211,14 +211,6 @@ The Homebrew service runs `distill watch`, which reads the watched products from
 
 `install` does not keep the web server running. At the end it prints `distill serve` and `http://127.0.0.1:7373`; run that command whenever you want to review observations, accept proposals, or change promotion destinations.
 
-## Smoke tests
-
-```sh
-scripts/smoke-install.sh
-```
-
-The script runs `distill install` against temporary `HOME` directories, feeds representative interactive answers, and asserts the resulting `~/.distill/preferences.json` plus non-Homebrew launchd plist behavior. It does not start `distill watch` and does not touch your real home directory.
-
 ## FAQ
 
 **What version am I running?**
