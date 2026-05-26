@@ -14,7 +14,8 @@ func TestPrintAgentsGuideDocumentsWatcherStartup(t *testing.T) {
 
 	for _, want := range []string{
 		"distill agent guide",
-		"Watch uses --new semantics with no default batch cap.",
+		"Watch uses --new semantics with no default batch cap; install",
+		"baselines historical quiet sessions before starting it.",
 		"On startup, distill watch immediately performs one extraction pass.",
 		"~/.distill/watch.log",
 		"Promotion is intentionally human-in-the-loop.",

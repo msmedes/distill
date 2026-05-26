@@ -10,9 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const launchdLabel = "com.msmedes.distill.watch"
+const installBootstrapRecentLimit = 15
+
+type installPlan struct {
+	preferences     preferences
+	bootstrapRecent bool
+}
 
 var launchctl = func(args ...string) error {
 	return exec.Command("launchctl", args...).Run()
@@ -45,16 +52,23 @@ func runInstall(args []string) error {
 		return err
 	}
 	prefs := defaults
+	plan := installPlan{preferences: prefs}
 	if !*nonInteractive {
-		prefs, err = promptInstallPreferences(os.Stdin, os.Stdout, defaults)
+		plan, err = promptInstallPlan(os.Stdin, os.Stdout, defaults)
 		if err != nil {
 			return err
 		}
+		prefs = plan.preferences
+	} else {
+		prefs = plan.preferences
 	}
 	if err := ensureInstallTargets(prefs); err != nil {
 		return err
 	}
 	if err := writePreferences(p, prefs); err != nil {
+		return err
+	}
+	if err := bootstrapInstallSessions(p, prefs, plan.bootstrapRecent, os.Stdout); err != nil {
 		return err
 	}
 	if err := configureLaunchdWatcher(prefs); err != nil {
@@ -65,6 +79,11 @@ func runInstall(args []string) error {
 }
 
 func promptInstallPreferences(in io.Reader, out io.Writer, defaults preferences) (preferences, error) {
+	plan, err := promptInstallPlan(in, out, defaults)
+	return plan.preferences, err
+}
+
+func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (installPlan, error) {
 	reader := bufio.NewReader(in)
 	prefs := defaults
 	fmt.Fprintln(out, "distill setup")
@@ -72,33 +91,41 @@ func promptInstallPreferences(in io.Reader, out io.Writer, defaults preferences)
 
 	watchClaude, err := promptBool(reader, out, "Watch Claude Code?", true)
 	if err != nil {
-		return preferences{}, err
+		return installPlan{}, err
 	}
 	watchCodex, err := promptBool(reader, out, "Watch Codex?", true)
 	if err != nil {
-		return preferences{}, err
+		return installPlan{}, err
 	}
 	prefs.WatchClaude = watchClaude
 	prefs.WatchCodex = watchCodex
 	if !prefs.WatchClaude && !prefs.WatchCodex {
-		return preferences{}, fmt.Errorf("choose at least one product to watch")
+		return installPlan{}, fmt.Errorf("choose at least one product to watch")
 	}
 
 	unified, err := promptBool(reader, out, "Use one user-scoped instructions file at ~/.agents/AGENTS.md?", true)
 	if err != nil {
-		return preferences{}, err
+		return installPlan{}, err
 	}
 	if unified {
 		prefs.PromotionMode = promotionModeUnified
 	} else {
 		prefs.PromotionMode = promotionModeSeparate
 	}
-	autoWatch, err := promptBool(reader, out, "Watch sessions automatically at login instead of running manually?", true)
+	bootstrapRecent, err := promptBool(reader, out, fmt.Sprintf("Process your %d most recent quiet sessions now?", installBootstrapRecentLimit), true)
 	if err != nil {
-		return preferences{}, err
+		return installPlan{}, err
+	}
+	autoWatch, err := promptBool(reader, out, "Watch future sessions automatically at login?", true)
+	if err != nil {
+		return installPlan{}, err
 	}
 	prefs.AutomaticWatch = autoWatch
-	return normalizePreferences(prefs)
+	prefs, err = normalizePreferences(prefs)
+	if err != nil {
+		return installPlan{}, err
+	}
+	return installPlan{preferences: prefs, bootstrapRecent: bootstrapRecent}, nil
 }
 
 func promptBool(reader *bufio.Reader, out io.Writer, question string, defaultYes bool) (bool, error) {
@@ -167,6 +194,65 @@ func ensureInstallTargets(prefs preferences) error {
 		return err
 	}
 	return os.MkdirAll(prefs.SkillsDir, 0o755)
+}
+
+func bootstrapInstallSessions(p paths, prefs preferences, bootstrapRecent bool, out io.Writer) error {
+	quietFor, err := time.ParseDuration(prefs.QuietFor)
+	if err != nil {
+		return err
+	}
+	if bootstrapRecent {
+		fmt.Fprintf(out, "bootstrap: processing up to %d recent quiet session(s)\n", installBootstrapRecentLimit)
+		opts := extractOpts{
+			product:           prefs.watchProduct(),
+			recent:            installBootstrapRecentLimit,
+			onlyNew:           true,
+			model:             prefs.ExtractionModel,
+			maxTranscriptChar: prefs.MaxTranscriptChars,
+			minUserTurns:      prefs.MinUserTurns,
+			minUserChars:      prefs.MinUserChars,
+			maxObservations:   prefs.MaxObservations,
+			zoomContextChars:  prefs.ZoomContextChars,
+			noSkip:            prefs.NoSkip,
+		}
+		if err := runExtractWithPaths(p, opts, quietFor); err != nil {
+			return err
+		}
+	}
+	count, err := markExistingQuietSessionsProcessed(p, prefs.watchProduct(), quietFor, time.Now())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "bootstrap: baselined %d existing quiet session(s); watcher will process future sessions\n", count)
+	return nil
+}
+
+func markExistingQuietSessionsProcessed(p paths, target product, quietFor time.Duration, now time.Time) (int, error) {
+	sessions, err := listSessions(p, target)
+	if err != nil {
+		return 0, err
+	}
+	sessions = quietSessions(sessions, quietFor, now)
+	st := newStore(p)
+	count := 0
+	err = st.withLock(func() error {
+		state, err := readState(p.stateFile)
+		if err != nil {
+			return err
+		}
+		for _, session := range sessions {
+			if processedSession(state, session) {
+				continue
+			}
+			state.markProcessed(sessionStateKey(session.product, session.sessionID))
+			count++
+		}
+		if count == 0 {
+			return nil
+		}
+		return writeState(p.stateFile, state)
+	})
+	return count, err
 }
 
 func configureLaunchdWatcher(prefs preferences) error {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *testing.T) {
@@ -18,10 +19,11 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	}
 	var out bytes.Buffer
 
-	prefs, err := promptInstallPreferences(strings.NewReader("\n\n\n\n"), &out, defaults)
+	plan, err := promptInstallPlan(strings.NewReader("\n\n\n\n\n"), &out, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
+	prefs := plan.preferences
 
 	if !prefs.WatchClaude || !prefs.WatchCodex {
 		t.Fatalf("expected both products watched, got %#v", prefs)
@@ -32,11 +34,17 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	if !prefs.AutomaticWatch {
 		t.Fatal("expected automatic watcher by default")
 	}
+	if !plan.bootstrapRecent {
+		t.Fatal("expected recent bootstrap by default")
+	}
 	if prefs.AlwaysOnPath != filepath.Join(home, ".agents", "AGENTS.md") {
 		t.Fatalf("unexpected always-on path: %s", prefs.AlwaysOnPath)
 	}
 	if !strings.Contains(out.String(), "Watch Claude Code? [Y/n]") {
 		t.Fatalf("expected Claude prompt, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Process your 15 most recent quiet sessions now? [Y/n]") {
+		t.Fatalf("expected bootstrap prompt, got %q", out.String())
 	}
 }
 
@@ -48,13 +56,17 @@ func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
 	}
 	var out bytes.Buffer
 
-	prefs, err := promptInstallPreferences(strings.NewReader("y\ny\nn\nn\n"), &out, defaults)
+	plan, err := promptInstallPlan(strings.NewReader("y\ny\nn\nn\nn\n"), &out, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
+	prefs := plan.preferences
 
 	if prefs.PromotionMode != promotionModeSeparate {
 		t.Fatalf("expected separate promotion mode, got %s", prefs.PromotionMode)
+	}
+	if plan.bootstrapRecent {
+		t.Fatal("expected recent bootstrap disabled")
 	}
 	if prefs.AutomaticWatch {
 		t.Fatal("expected automatic watcher disabled")
@@ -71,6 +83,53 @@ func TestPromptInstallPreferencesRequiresAWatchedProduct(t *testing.T) {
 
 	if _, err := promptInstallPreferences(strings.NewReader("n\nn\n"), &out, defaults); err == nil {
 		t.Fatal("expected no watched products to fail")
+	}
+}
+
+func TestMarkExistingQuietSessionsProcessedBaselinesOnlyQuietSessions(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	claudeProjects := filepath.Join(dir, "claude-projects")
+	codexSessions := filepath.Join(dir, "codex-sessions")
+	for _, path := range []string{claudeProjects, codexSessions} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := paths{
+		claudeProjects:  claudeProjects,
+		codexSessions:   codexSessions,
+		stateDir:        filepath.Join(dir, "state"),
+		stateFile:       filepath.Join(dir, "state", "state.json"),
+		observationFile: filepath.Join(dir, "state", "observations.jsonl"),
+	}
+	writeInstallClaudeSession(t, p.claudeProjects, "old-claude", now.Add(-time.Hour))
+	writeInstallClaudeSession(t, p.claudeProjects, "recent-claude", now.Add(-time.Minute))
+	writeCodexSession(t, p.codexSessions, "old-codex", now.Add(-time.Hour))
+	writeCodexSession(t, p.codexSessions, "recent-codex", now.Add(-time.Minute))
+
+	count, err := markExistingQuietSessionsProcessed(p, productAll, 10*time.Minute, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 quiet sessions marked, got %d", count)
+	}
+	state, err := readState(p.stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processedSession(state, sessionMeta{product: productClaude, sessionID: "old-claude"}) {
+		t.Fatalf("old Claude session not marked: %#v", state)
+	}
+	if !processedSession(state, sessionMeta{product: productCodex, sessionID: "old-codex"}) {
+		t.Fatalf("old Codex session not marked: %#v", state)
+	}
+	if processedSession(state, sessionMeta{product: productClaude, sessionID: "recent-claude"}) {
+		t.Fatalf("recent Claude session should remain eligible: %#v", state)
+	}
+	if processedSession(state, sessionMeta{product: productCodex, sessionID: "recent-codex"}) {
+		t.Fatalf("recent Codex session should remain eligible: %#v", state)
 	}
 }
 
@@ -256,6 +315,22 @@ func TestPrintInstallSummaryKeepsManualWatchCommand(t *testing.T) {
 	}
 	if !strings.Contains(got, "open the web UI: distill serve") {
 		t.Fatalf("summary missing serve command:\n%s", got)
+	}
+}
+
+func writeInstallClaudeSession(t *testing.T, root, id string, mtime time.Time) {
+	t.Helper()
+	projectDir := filepath.Join(root, "-tmp-project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(projectDir, id+".jsonl")
+	body := `{"type":"user","uuid":"user-1","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
 	}
 }
 

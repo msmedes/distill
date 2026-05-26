@@ -135,7 +135,7 @@ Promoted observations default to:
 
 distill writes portable artifacts. It does not copy or symlink them into every agent runtime's native location; configure your agent to read the portable path when needed.
 
-`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether user-scoped instruction promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Project-scoped instruction promotions derive their destination from the session cwd. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
+`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether user-scoped instruction promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Project-scoped instruction promotions derive their destination from the session cwd. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. During setup, distill recommends processing the 15 most recent quiet sessions, then baselines the rest of the existing quiet backlog so the watcher starts from "now" instead of backfilling the whole machine. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
 
 For agents trying to answer how distill works from an installed binary, run:
 
@@ -185,7 +185,7 @@ Known follow-ups:
 
 ## Auto-extract by watching transcripts
 
-`distill watch` polls Claude Code and Codex transcript directories and processes sessions that have been quiet long enough. This keeps automatic ingestion consistent across both products instead of relying on product-specific hook lifecycle events.
+`distill watch` polls Claude Code and Codex transcript directories and processes sessions that have been quiet long enough. This keeps automatic ingestion consistent across both products instead of relying on product-specific hook lifecycle events. After `distill install`, already-existing quiet sessions are baselined so the watcher catches future sessions without doing an install-time historical backfill.
 
 The extractor does a cheap local pass before calling Claude. Short sessions with no correction/preference markers are marked processed without an LLM call, and non-skipped sessions send user-authored turns plus bounded local assistant context around high-signal corrections. Existing observations are reduced to a relevant capped subset.
 
@@ -196,6 +196,8 @@ distill watch --interval 2h           # scan every two hours
 distill watch --product codex         # watch only Codex transcripts
 distill watch --quiet-for 30m         # wait longer before processing active files
 ```
+
+To intentionally backfill old history later, run `distill extract --new` yourself. That command is explicit because it can process a large historical backlog.
 
 For Homebrew installs, automatic watching is managed by Homebrew services:
 

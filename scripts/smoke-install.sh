@@ -15,7 +15,7 @@ run_case() {
   home="$(mktemp -d)"
   local out
   out="$(mktemp)"
-  trap 'rm -rf "$home"; rm -f "$out"' RETURN
+  trap 'chmod -R u+w "$home" 2>/dev/null || true; rm -rf "$home"; rm -f "$out"' RETURN
 
   printf "%s" "$answers" | DISTILL_TEST_LAUNCHD=1 HOME="$home" go run ./cmd/distill install >"$out"
 
@@ -53,8 +53,8 @@ PY
 
 cd "$ROOT"
 
-run_case "defaults" $'\n\n\n\n' true true unified true
-run_case "codex-separate-manual" $'n\ny\nn\nn\n' false true separate false
-run_case "claude-unified-auto" $'y\nn\ny\ny\n' true false unified true
+run_case "defaults" $'\n\n\n\n\n' true true unified true
+run_case "codex-separate-manual" $'n\ny\nn\nn\nn\n' false true separate false
+run_case "claude-unified-auto" $'y\nn\ny\nn\ny\n' true false unified true
 
 echo "install smoke passed"

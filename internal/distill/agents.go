@@ -61,7 +61,10 @@ State and source files
 Important commands
   distill install
     Interactive setup. Chooses watched products, promotion destinations, and
-    whether launchd should run distill watch at login.
+    whether launchd should run distill watch at login. Setup recommends
+    processing the 15 most recent quiet sessions, then marks the rest of the
+    existing quiet backlog processed so automatic watching starts from "now"
+    instead of backfilling every historical session.
 
   distill extract --recent N
     Processes the N most recent sessions across the selected products.
@@ -75,7 +78,8 @@ Important commands
   distill watch
     Polls transcript directories forever. Defaults to one scan immediately, then
     one scan every 1h. Defaults to --quiet-for 10m, so recently modified files
-    are deferred. Watch uses --new semantics with no default batch cap.
+    are deferred. Watch uses --new semantics with no default batch cap; install
+    baselines historical quiet sessions before starting it.
 
   distill synthesize
     Runs the corpus-level proposal pass. It proposes promotions; it does not
@@ -118,6 +122,9 @@ Watcher startup behavior
   sessions, sorts newest first, removes sessions modified inside the quiet
   window, removes sessions already present in ~/.distill/state.json, processes
   every remaining eligible session, then sleeps for the configured interval.
+  A normal install pre-populates ~/.distill/state.json for the existing quiet
+  backlog, so the first service pass catches future sessions rather than the
+  machine's whole transcript history.
 
   If a machine has more source session files than distill processes on the first
   pass, likely explanations are:
