@@ -99,6 +99,9 @@ func TestIndexDoesNotScanSessionsForRunControl(t *testing.T) {
 	if !strings.Contains(body, "up to 5") {
 		t.Fatalf("index did not render run control without session directory:\n%s", body)
 	}
+	if strings.Contains(body, "promotion destinations") {
+		t.Fatalf("index rendered duplicate promotion destination settings:\n%s", body)
+	}
 }
 
 func TestHelpPageRenders(t *testing.T) {
