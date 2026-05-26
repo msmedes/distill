@@ -192,8 +192,14 @@ type indexData struct {
 }
 
 type sessionsData struct {
-	Sessions []processedSessionView
-	Count    int
+	Sessions       []processedSessionView
+	Count          int
+	Shown          int
+	Limit          int
+	HasMore        bool
+	Filter         string
+	ProcessedCount int
+	ObservedCount  int
 }
 
 type processedSessionView struct {
@@ -207,6 +213,7 @@ type processedSessionView struct {
 	Title       string
 	Command     string
 	SourcePath  string
+	Evidence    int
 }
 
 type settingsData struct {
@@ -321,14 +328,22 @@ func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	sessions, err := s.processedSessions()
+	limit := parseSessionsLimit(r)
+	filter := parseSessionsFilter(r)
+	sessions, stats, err := s.processedSessions(limit, filter)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("reading sessions: %v", err), http.StatusInternalServerError)
 		return
 	}
 	data := sessionsData{
-		Sessions: sessions,
-		Count:    len(sessions),
+		Sessions:       sessions,
+		Count:          stats.matching,
+		Shown:          len(sessions),
+		Limit:          limit,
+		HasMore:        stats.matching > len(sessions),
+		Filter:         filter,
+		ProcessedCount: stats.processed,
+		ObservedCount:  stats.observed,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.sessionsTmpl.Execute(w, data); err != nil {
@@ -336,11 +351,58 @@ func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) processedSessions() ([]processedSessionView, error) {
+const defaultSessionsPageLimit = 100
+const maxSessionsPageLimit = 500
+const sessionsFilterObservations = "observations"
+const sessionsFilterAll = "all"
+
+func parseSessionsLimit(r *http.Request) int {
+	n := defaultSessionsPageLimit
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			n = parsed
+		}
+	}
+	if n > maxSessionsPageLimit {
+		return maxSessionsPageLimit
+	}
+	return n
+}
+
+func parseSessionsFilter(r *http.Request) string {
+	switch strings.TrimSpace(r.URL.Query().Get("filter")) {
+	case sessionsFilterAll:
+		return sessionsFilterAll
+	default:
+		return sessionsFilterObservations
+	}
+}
+
+type sessionsStats struct {
+	matching  int
+	processed int
+	observed  int
+}
+
+type observedSessionInfo struct {
+	Count int
+	Title string
+}
+
+func (s *server) processedSessions(limit int, filter string) ([]processedSessionView, sessionsStats, error) {
 	st := newStore(s.paths)
 	state, err := st.readState()
 	if err != nil {
-		return nil, err
+		return nil, sessionsStats{}, err
+	}
+	observed, err := s.observedSessions()
+	if err != nil {
+		return nil, sessionsStats{}, err
+	}
+	stats := sessionsStats{
+		processed: len(state.ProcessedSessions),
+		observed:  len(observed),
 	}
 
 	indexed, err := indexedSessionsByStateKey(s.paths)
@@ -359,6 +421,13 @@ func (s *server) processedSessions() ([]processedSessionView, error) {
 			productName = meta.product
 			sessionID = meta.sessionID
 		}
+		observedInfo := observed[sessionStateKey(productName, sessionID)]
+		if observedInfo.Count == 0 && productName == productClaude {
+			observedInfo = observed[sessionID]
+		}
+		if filter == sessionsFilterObservations && observedInfo.Count == 0 {
+			continue
+		}
 
 		view := processedSessionView{
 			Product:     productName,
@@ -366,19 +435,52 @@ func (s *server) processedSessions() ([]processedSessionView, error) {
 			ShortID:     shortID(sessionID),
 			ProcessedAt: processedAt,
 			Title:       "untitled session",
+			Evidence:    observedInfo.Count,
+		}
+		if observedInfo.Title != "" {
+			view.Title = observedInfo.Title
 		}
 		if hasMeta {
 			view.SessionTime = meta.mtime.Format(time.RFC3339)
 			view.Project = projectLabel(meta.cwd, meta.projectDir)
 			view.SourcePath = meta.filePath
 			view.Command = sessionResumeCommand(productName, sessionID, meta.cwd)
-			title, length := summarizeSessionFile(meta)
-			if title != "" {
-				view.Title = title
-			}
-			view.Length = length
 		}
 		views = append(views, view)
+	}
+	if filter == sessionsFilterObservations {
+		for key, observedInfo := range observed {
+			if key == "" || strings.Contains(key, ":") && processedSessionKeyExists(state, key) {
+				continue
+			}
+			productName, sessionID := splitSessionStateKey(key)
+			meta, hasMeta := indexed[key]
+			if !hasMeta && productName == productClaude {
+				meta, hasMeta = indexed[sessionStateKey(productClaude, sessionID)]
+			}
+			if hasMeta {
+				productName = meta.product
+				sessionID = meta.sessionID
+			}
+			view := processedSessionView{
+				Product:     productName,
+				SessionID:   sessionID,
+				ShortID:     shortID(sessionID),
+				Title:       "untitled session",
+				Evidence:    observedInfo.Count,
+				ProcessedAt: "not in state",
+			}
+			if observedInfo.Title != "" {
+				view.Title = observedInfo.Title
+			}
+			if hasMeta {
+				view.SessionTime = meta.mtime.Format(time.RFC3339)
+				view.Project = projectLabel(meta.cwd, meta.projectDir)
+				view.SourcePath = meta.filePath
+				view.Command = sessionResumeCommand(productName, sessionID, meta.cwd)
+			}
+			views = append(views, view)
+		}
 	}
 
 	sort.Slice(views, func(i, j int) bool {
@@ -396,7 +498,82 @@ func (s *server) processedSessions() ([]processedSessionView, error) {
 		}
 		return views[i].SessionID > views[j].SessionID
 	})
-	return views, nil
+	total := len(views)
+	stats.matching = total
+	if limit > 0 && len(views) > limit {
+		views = views[:limit]
+	}
+	for i := range views {
+		if views[i].SourcePath == "" {
+			continue
+		}
+		if views[i].Title != "untitled session" {
+			continue
+		}
+		title, length := summarizeSessionFile(sessionMeta{
+			product:   views[i].Product,
+			sessionID: views[i].SessionID,
+			filePath:  views[i].SourcePath,
+		})
+		if title != "" {
+			views[i].Title = title
+		}
+		views[i].Length = length
+	}
+	return views, stats, nil
+}
+
+func processedSessionKeyExists(state *stateFile, key string) bool {
+	if _, ok := state.ProcessedSessions[key]; ok {
+		return true
+	}
+	productName, sessionID := splitSessionStateKey(key)
+	return productName == productClaude && processedSessionKeyExistsLegacy(state, sessionID)
+}
+
+func processedSessionKeyExistsLegacy(state *stateFile, sessionID string) bool {
+	_, ok := state.ProcessedSessions[sessionID]
+	return ok
+}
+
+func (s *server) observedSessions() (map[string]observedSessionInfo, error) {
+	obs, err := newStore(s.paths).readObservations()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]observedSessionInfo{}
+	for _, o := range obs {
+		for _, e := range o.Evidence {
+			p := e.Product
+			if p == "" {
+				p = productClaude
+			}
+			if e.SessionID == "" {
+				continue
+			}
+			addObservedSession(out, sessionStateKey(p, e.SessionID), e.Quote)
+		}
+		for _, sessionID := range o.ContradictedBy {
+			if sessionID == "" {
+				continue
+			}
+			key := sessionID
+			if !strings.Contains(sessionID, ":") {
+				key = sessionStateKey(productClaude, sessionID)
+			}
+			addObservedSession(out, key, "")
+		}
+	}
+	return out, nil
+}
+
+func addObservedSession(out map[string]observedSessionInfo, key, title string) {
+	info := out[key]
+	info.Count++
+	if info.Title == "" && strings.TrimSpace(title) != "" {
+		info.Title = compactTitle(title)
+	}
+	out[key] = info
 }
 
 func splitSessionStateKey(key string) (product, string) {

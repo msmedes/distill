@@ -185,7 +185,9 @@
 <div class="wrap">
   <header class="top">
     <h1>distill<span class="dot">.</span> sessions</h1>
-    <div class="meta"><a href="/">observations</a> · <a href="/settings">settings</a> · {{.Count}} processed</div>
+    <div class="meta">
+      <a href="/">observations</a> · <a href="/settings">settings</a> · {{.ObservedCount}} with observations · {{.ProcessedCount}} processed{{if eq .Filter "all"}} · all processed{{else}} · <a href="/sessions?filter=all">show all processed</a>{{end}}{{if .HasMore}} · showing {{.Shown}} newest · <a href="/sessions?filter={{.Filter}}&limit=500">show 500</a>{{end}}
+    </div>
   </header>
 
   {{if .Sessions}}
@@ -199,6 +201,7 @@
           <span>{{.ShortID}}</span>
           {{if .Project}}<span>{{.Project}}</span>{{end}}
           {{if .Length}}<span>{{.Length}}</span>{{end}}
+          {{if .Evidence}}<span>{{.Evidence}} evidence</span>{{end}}
         </div>
       </div>
       <div class="time">

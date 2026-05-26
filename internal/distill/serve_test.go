@@ -2,6 +2,7 @@ package distill
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -243,7 +244,7 @@ func TestSessionsPageRendersProcessedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/sessions?filter=all", nil)
 	rr := httptest.NewRecorder()
 	s.handleSessions(rr, req)
 
@@ -271,6 +272,63 @@ func TestSessionsPageRendersProcessedSessions(t *testing.T) {
 	}
 	if strings.Index(body, "Newer session should sort first by session time.") > strings.Index(body, "Please wire the processed sessions page into the header.") {
 		t.Fatalf("newer session sorted after older session:\n%s", body)
+	}
+}
+
+func TestSessionsPageDefaultsToNewestProcessedSessions(t *testing.T) {
+	s := testServer(t)
+	state := &stateFile{ProcessedSessions: map[string]string{}}
+	var evidenceRecords []evidence
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	for i := range 105 {
+		id := fmt.Sprintf("session-%03d", i)
+		writeCodexSessionWithTurns(t, s.paths.codexSessions, id, []string{
+			`{"type":"session_meta","payload":{"id":"` + id + `","cwd":"/tmp/distill"}}`,
+			`{"timestamp":"2026-05-24T12:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Session ` + id + ` title."}]}}`,
+		}, base.Add(time.Duration(i)*time.Minute))
+		state.ProcessedSessions[sessionStateKey(productCodex, id)] = base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
+		evidenceRecords = append(evidenceRecords, evidence{
+			SessionID:  id,
+			Product:    productCodex,
+			TurnRefs:   []string{"turn 1"},
+			Quote:      "Session " + id + " title.",
+			RecordedAt: base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
+		})
+	}
+	if err := writeObservations(s.paths.observationFile, []observation{{
+		ID:        "obs_0001",
+		Claim:     "test",
+		Type:      typeWorkflow,
+		Scope:     scopeUser,
+		FirstSeen: base.Format(time.RFC3339),
+		LastSeen:  base.Format(time.RFC3339),
+		Evidence:  evidenceRecords,
+		Status:    statusActive,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := refreshSessionIndex(context.Background(), s.paths, productCodex); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeState(s.paths.stateFile, state); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rr := httptest.NewRecorder()
+	s.handleSessions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"105 with observations", "105 processed", "showing 100 newest", "show 500", "Session session-104 title.", "1 evidence"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sessions page missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Session session-004 title.") {
+		t.Fatalf("default sessions page rendered beyond newest 100:\n%s", body)
 	}
 }
 
