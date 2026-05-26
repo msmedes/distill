@@ -36,16 +36,16 @@ A single static binary lands at `./distill`. No runtime dependencies beyond `cla
 ## Quickstart
 
 ```sh
-# 0. Configure watched products and promotion destinations
+# 0. Configure watched products, promotion destinations, and initial bootstrap
 ./distill install
 # installer prints the web UI command and URL
 
-# 1. Walk recent Claude Code and Codex sessions, emit observations
-./distill extract --recent 20
+# 1. If you skipped install-time bootstrap, process a bounded recent slice
+./distill extract --recent 15
 # Or target one product explicitly
 ./distill extract --codex --recent 10
 
-# 2. (Later) catch up on everything new since last time
+# 2. (Optional) intentionally backfill old history later
 ./distill extract --new
 
 # 3. Ask the model to propose which observations should become skills / instructions
@@ -68,7 +68,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `distill serve`      | Run the curation web UI (default `http://127.0.0.1:7373`). |
 | `distill list`       | Plain-text dump of accumulated observations. |
 | `distill compact`    | Dedup evidence entries (e.g. after `/resume` duplicated turns). |
-| `distill install`    | Interactive setup for watched products, promotion destinations, and automatic watching. |
+| `distill install`    | Interactive setup for watched products, promotion destinations, bounded bootstrap, and automatic watching. |
 | `distill agents`     | Detailed operating guide for coding agents answering questions about distill. |
 | `distill help`       | Usage. |
 
@@ -227,7 +227,7 @@ The script runs `distill install` against temporary `HOME` directories, feeds re
 distill version          # or: distill --version, -v
 ```
 
-Homebrew installs report the released tag (e.g. `v0.2.6`). Source builds without a tagged ldflag fall back to the module version from `runtime/debug.BuildInfo` (e.g. `v0.2.5+dirty`), or `dev` if neither is available.
+Homebrew installs report the released tag (e.g. `v0.2.9`). Source builds without a tagged ldflag fall back to the module version from `runtime/debug.BuildInfo` (e.g. `v0.2.9+dirty`), or `dev` if neither is available.
 
 **How do I upgrade?**
 
