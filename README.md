@@ -1,8 +1,10 @@
-<img width="968" height="593" alt="image" src="https://github.com/user-attachments/assets/3ef40a75-2ebd-41a8-b677-a783e47ea211" />
-
 # distill
 
 Build a model of yourself — your preferences, workflows, friction points — from your Claude Code and Codex session history. Curate it through a local web UI. Promote the signal into portable user- or project-scoped skills and instructions.
+
+It looks like this: 
+<img width="970" height="912" alt="image" src="https://github.com/user-attachments/assets/793f4a3a-8191-415b-b546-bfcb323eef10" />
+
 
 distill never autonomously writes to your agent artifacts. The LLM extracts and proposes; you accept or dismiss. Promotion destinations are configurable in the web UI.
 
