@@ -124,8 +124,18 @@ func readPreferences(p paths) (preferences, error) {
 	if len(strings.TrimSpace(string(b))) == 0 {
 		return prefs, nil
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return preferences{}, fmt.Errorf("parsing %s: %w", p.preferencesFile, err)
+	}
 	if err := json.Unmarshal(b, &prefs); err != nil {
 		return preferences{}, fmt.Errorf("parsing %s: %w", p.preferencesFile, err)
+	}
+	if _, ok := fields["extraction_model"]; !ok {
+		prefs.ExtractionModel = ""
+	}
+	if _, ok := fields["generation_model"]; !ok {
+		prefs.GenerationModel = ""
 	}
 	return normalizePreferences(prefs)
 }
@@ -184,9 +194,6 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if prefs.GenerationBackend == "" {
 		prefs.GenerationBackend = defaults.GenerationBackend
 	}
-	if strings.TrimSpace(prefs.GenerationModel) == "" {
-		prefs.GenerationModel = defaults.GenerationModel
-	}
 	if strings.TrimSpace(prefs.WatchInterval) == "" {
 		prefs.WatchInterval = defaults.WatchInterval
 	}
@@ -226,8 +233,14 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if prefs.GenerationBackend != extractionBackendClaude && prefs.GenerationBackend != extractionBackendCodex {
 		return preferences{}, fmt.Errorf("generation backend must be %q or %q: %s", extractionBackendClaude, extractionBackendCodex, prefs.GenerationBackend)
 	}
-	prefs.ExtractionModel = normalizeModelForBackend(prefs.ExtractionBackend, prefs.ExtractionModel, defaultExtractionModel(prefs.ExtractionBackend))
-	prefs.GenerationModel = normalizeModelForBackend(prefs.GenerationBackend, prefs.GenerationModel, defaultGenerationModel(prefs.GenerationBackend))
+	prefs.ExtractionModel, err = normalizeModelForBackend("extraction model", prefs.ExtractionBackend, prefs.ExtractionModel, defaultExtractionModel(prefs.ExtractionBackend))
+	if err != nil {
+		return preferences{}, err
+	}
+	prefs.GenerationModel, err = normalizeModelForBackend("generation model", prefs.GenerationBackend, prefs.GenerationModel, defaultGenerationModel(prefs.GenerationBackend))
+	if err != nil {
+		return preferences{}, err
+	}
 	if _, err := time.ParseDuration(prefs.WatchInterval); err != nil {
 		return preferences{}, fmt.Errorf("watch interval must be a Go duration: %w", err)
 	}
@@ -291,13 +304,16 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	return prefs, nil
 }
 
-func normalizeModelForBackend(backend, model, defaultModel string) string {
+func normalizeModelForBackend(field, backend, model, defaultModel string) (string, error) {
 	model = strings.TrimSpace(model)
-	options := extractionModelOptions(backend)
-	if containsModelOption(options, model) {
-		return model
+	if model == "" {
+		return defaultModel, nil
 	}
-	return defaultModel
+	options := modelOptionsForBackend(backend)
+	if containsModelOption(options, model) {
+		return model, nil
+	}
+	return "", fmt.Errorf("%s must be one of %s for %s backend: %s", field, strings.Join(modelOptionValues(options), ", "), backend, model)
 }
 
 func defaultExtractionModel(backend string) string {
@@ -318,13 +334,21 @@ func defaultGenerationModel(backend string) string {
 	}
 }
 
-func extractionModelOptions(backend string) []modelOption {
+func modelOptionsForBackend(backend string) []modelOption {
 	switch backend {
 	case extractionBackendCodex:
 		return codexExtractionModelOptions
 	default:
 		return claudeExtractionModelOptions
 	}
+}
+
+func modelOptionValues(options []modelOption) []string {
+	values := make([]string, 0, len(options))
+	for _, option := range options {
+		values = append(values, option.Value)
+	}
+	return values
 }
 
 func containsModelOption(options []modelOption, value string) bool {

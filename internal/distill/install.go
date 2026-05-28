@@ -109,6 +109,7 @@ func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (insta
 		return installPlan{}, err
 	}
 	prefs.ExtractionBackend = backend
+	prefs.ExtractionModel = defaultExtractionModel(backend)
 
 	unified, err := promptBool(reader, out, "Use one user-scoped instructions file at ~/.agents/AGENTS.md?", true)
 	if err != nil {

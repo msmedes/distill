@@ -205,7 +205,8 @@
       cursor: default;
     }
     .choice input { margin: 0; accent-color: var(--accent); }
-    .choice.selected {
+    .choice.selected,
+    .choice:has(input:checked) {
       color: var(--fg);
       border-color: var(--fg-soft);
       background: var(--bg-card-muted);
@@ -557,6 +558,9 @@
   function syncModelSet(group) {
     const backend = document.querySelector(`input[name="${group}_backend"]:checked`)?.value || 'claude';
     const modelFallback = document.querySelector(`input[name="${group}_model"]`);
+    for (const input of document.querySelectorAll(`input[name="${group}_backend"]`)) {
+      input.closest('.choice')?.classList.toggle('selected', input.checked);
+    }
     for (const set of Array.from(modelSets).filter((set) => set.dataset.modelSet?.startsWith(`${group}:`))) {
       const active = set.dataset.modelSet === `${group}:${backend}`;
       set.classList.toggle('active', active);

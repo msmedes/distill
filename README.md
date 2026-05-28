@@ -84,7 +84,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `--recent <n>`           | `1`    | Process the N most recent sessions across all projects. |
 | `--new`                  | off    | Process every unprocessed session (combine with `--recent` to cap). |
 | `--dry-run`              | off    | Show what would be extracted without writing. |
-| `--model <model>` | configured by settings, default `haiku` | Model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific models. |
+| `--model <model>` | configured by settings, default `haiku` | Allowlisted model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific model names. |
 | `--max-transcript-chars` | `60000` | Truncate rendered user-message excerpts longer than this. |
 | `--min-user-turns <n>` | `2` | Skip sessions with fewer user turns unless correction/preference language appears. |
 | `--min-user-chars <n>` | `200` | Skip sessions with fewer user-message chars unless correction/preference language appears. |
@@ -99,7 +99,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `--product <claude\|codex\|all>` | `all` | Which product's sessions to process. |
 | `--interval <duration>` | `1h` | Time between scans. Go duration syntax, e.g. `30m`, `2h`. |
 | `--quiet-for <duration>` | `10m` | Ignore transcripts modified more recently than this. |
-| `--model <model>` | configured by settings, default `haiku` | Model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific models. |
+| `--model <model>` | configured by settings, default `haiku` | Allowlisted model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific model names. |
 | `--no-skip` | off | Disable cheap local skipping for short low-signal sessions. |
 
 ### `serve` flags

@@ -109,7 +109,9 @@ Extraction defaults
   model:
     haiku by default for Claude extraction. Settings present semantic choices:
     fastest, balanced, and smartest. Claude maps those to haiku, sonnet, and
-    opus. Codex maps them to gpt-5.4-mini, gpt-5.4, and gpt-5.5.
+    opus. Codex maps them to gpt-5.4-mini, gpt-5.4, and gpt-5.5. Model values
+    are curated per backend; invalid explicit values fail instead of passing
+    through silently.
 
   generation:
     Proposal synthesis and promotion previews use their own configured backend

@@ -15,7 +15,7 @@ distill stores two model backend settings in `~/.distill/preferences.json`: `ext
 
 `distill install` asks for the extraction backend during setup, and the settings page can change extraction and generation later. Extraction uses the configured extraction backend for every selected source product. Synthesis and promotion previews use the configured generation backend.
 
-The default remains `claude` to preserve existing installs and non-interactive setup behavior. The settings UI presents semantic model choices, then maps them to backend-specific model names: fastest / balanced / smartest map to `haiku` / `sonnet` / `opus` for Claude and `gpt-5.4-mini` / `gpt-5.4` / `gpt-5.5` for Codex.
+The default remains `claude` to preserve existing installs and non-interactive setup behavior. The settings UI presents semantic labels, then stores backend-specific model names: fastest / balanced / smartest map to `haiku` / `sonnet` / `opus` for Claude and `gpt-5.4-mini` / `gpt-5.4` / `gpt-5.5` for Codex. The labels are only presentation copy; preferences store the provider-facing model value. Explicit invalid model values fail validation instead of silently passing through or being rewritten.
 
 ## Consequences
 
