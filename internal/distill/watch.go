@@ -66,7 +66,7 @@ func runWatch(args []string) error {
 	fmt.Printf("watching %s sessions every %s (quiet-for=%s)\n", targetProduct, interval.String(), quietFor.String())
 	for {
 		if err := runExtractOnce(opts, *quietFor); err != nil {
-			fmt.Printf("watch pass failed: %v\n", err)
+			fmt.Printf("%s watch pass failed: %v\n", time.Now().Format(time.RFC3339), err)
 		}
 		time.Sleep(*interval)
 	}

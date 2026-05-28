@@ -21,7 +21,7 @@ func TestReadObservationsRejectsMalformedRecords(t *testing.T) {
 
 func stubAlwaysOnGenerator(fn func(string, observation) string) func() {
 	original := generateAlwaysOnInstructions
-	generateAlwaysOnInstructions = func(_ context.Context, current string, o observation) (string, error) {
+	generateAlwaysOnInstructions = func(_ context.Context, _ preferences, current string, o observation) (string, error) {
 		return fn(current, o), nil
 	}
 	return func() {

@@ -27,12 +27,6 @@ type synthesizedProposal struct {
 }
 
 func runSynthesize(args []string) error {
-	fs := flag.NewFlagSet("synthesize", flag.ExitOnError)
-	model := fs.String("model", "sonnet", "model to use: haiku | sonnet | opus")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
 	p, err := resolvePaths()
 	if err != nil {
 		return err
@@ -40,8 +34,20 @@ func runSynthesize(args []string) error {
 	if err := p.ensure(); err != nil {
 		return err
 	}
+	prefs, err := readPreferences(p)
+	if err != nil {
+		return err
+	}
 
-	resolved, err := resolveModel(*model)
+	fs := flag.NewFlagSet("synthesize", flag.ExitOnError)
+	backend := fs.String("backend", prefs.GenerationBackend, "backend to use: claude | codex")
+	model := fs.String("model", prefs.GenerationModel, "model to use")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	prefs.GenerationBackend = *backend
+	prefs.GenerationModel = *model
+	prefs, err = normalizePreferences(prefs)
 	if err != nil {
 		return err
 	}
@@ -49,7 +55,7 @@ func runSynthesize(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	added, err := synthesizeProposals(ctx, p, resolved)
+	added, err := synthesizeProposals(ctx, p, prefs)
 	if err != nil {
 		return err
 	}
@@ -65,8 +71,8 @@ func runSynthesize(args []string) error {
 // synthesizeProposals runs one synthesis pass over active observations and
 // attaches LLM-proposed promotions. Returns the number of newly-attached
 // proposals (proposals already present on an observation are skipped).
-func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, error) {
-	resp, err := generateSynthesizedProposals(ctx, p, model)
+func synthesizeProposals(ctx context.Context, p paths, prefs preferences) (int, error) {
+	resp, err := generateSynthesizedProposals(ctx, p, prefs)
 	if err != nil {
 		return 0, err
 	}
@@ -102,7 +108,7 @@ func synthesizeProposals(ctx context.Context, p paths, model modelID) (int, erro
 	return added, nil
 }
 
-func generateSynthesizedProposals(ctx context.Context, p paths, model modelID) ([]synthesizedProposal, error) {
+func generateSynthesizedProposals(ctx context.Context, p paths, prefs preferences) ([]synthesizedProposal, error) {
 	st := newStore(p)
 	obs, err := st.readObservations()
 	if err != nil {
@@ -119,7 +125,7 @@ func generateSynthesizedProposals(ctx context.Context, p paths, model modelID) (
 		return nil, err
 	}
 
-	raw, err := callClaude(ctx, model, prompt)
+	raw, err := callGeneration(ctx, prefs, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("synthesize call: %w", err)
 	}

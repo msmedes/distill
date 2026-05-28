@@ -44,7 +44,7 @@ type diffLine struct {
 	Text string
 }
 
-var generateAlwaysOnInstructions = generateAlwaysOnInstructionsWithClaude
+var generateAlwaysOnInstructions = generateAlwaysOnInstructionsWithBackend
 
 func findObservation(obs []observation, id string) (int, bool) {
 	for i, o := range obs {
@@ -155,7 +155,7 @@ func previewPromoteToAgentsMDWithScope(ctx context.Context, p paths, id string, 
 	if err != nil {
 		return actionPreview{}, fmt.Errorf("reading instructions (%s): %w", target.Path, err)
 	}
-	updated, err := generateAlwaysOnInstructions(ctx, string(body), promptObs)
+	updated, err := generateAlwaysOnInstructions(ctx, prefs, string(body), promptObs)
 	if err != nil {
 		return actionPreview{}, err
 	}
@@ -213,7 +213,7 @@ func previewPromoteToSkillWithScope(ctx context.Context, p paths, id string, sco
 	if err != nil {
 		return actionPreview{}, err
 	}
-	gen, err := generateSkill(ctx, observationForPromotionTarget(o, target))
+	gen, err := generateSkill(ctx, prefs, observationForPromotionTarget(o, target))
 	if err != nil {
 		return actionPreview{}, fmt.Errorf("generating skill: %w", err)
 	}
@@ -484,7 +484,11 @@ func rewriteAlwaysOnInstructions(ctx context.Context, path string, o observation
 	if err != nil {
 		return fmt.Errorf("reading instructions (%s): %w", path, err)
 	}
-	updated, err := generateAlwaysOnInstructions(ctx, string(body), o)
+	prefs, err := readPreferencesFromDefaultPaths()
+	if err != nil {
+		return err
+	}
+	updated, err := generateAlwaysOnInstructions(ctx, prefs, string(body), o)
 	if err != nil {
 		return err
 	}
@@ -494,7 +498,7 @@ func rewriteAlwaysOnInstructions(ctx context.Context, path string, o observation
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
-func generateAlwaysOnInstructionsWithClaude(ctx context.Context, current string, o observation) (string, error) {
+func generateAlwaysOnInstructionsWithBackend(ctx context.Context, prefs preferences, current string, o observation) (string, error) {
 	prompt, err := buildAlwaysOnPrompt(current, o)
 	if err != nil {
 		return "", err
@@ -504,7 +508,7 @@ func generateAlwaysOnInstructionsWithClaude(ctx context.Context, current string,
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 	}
-	raw, err := callClaude(ctx, modelOpus, prompt)
+	raw, err := callGeneration(ctx, prefs, prompt)
 	if err != nil {
 		return "", fmt.Errorf("generating instructions: %w", err)
 	}
@@ -574,7 +578,7 @@ type generatedSkill struct {
 	Body        string `json:"body"`
 }
 
-func generateSkill(ctx context.Context, o observation) (generatedSkill, error) {
+func generateSkill(ctx context.Context, prefs preferences, o observation) (generatedSkill, error) {
 	prompt, err := buildSkillPrompt(o)
 	if err != nil {
 		return generatedSkill{}, err
@@ -584,7 +588,7 @@ func generateSkill(ctx context.Context, o observation) (generatedSkill, error) {
 		ctx, cancel = context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 	}
-	raw, err := callClaude(ctx, modelOpus, prompt)
+	raw, err := callGeneration(ctx, prefs, prompt)
 	if err != nil {
 		return generatedSkill{}, err
 	}

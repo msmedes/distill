@@ -40,8 +40,11 @@ func TestResolveClaudeCommandFindsUserLocalBin(t *testing.T) {
 func TestCallCodexExecUsesOutputLastMessage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	argsFile := filepath.Join(dir, "args.txt")
+	t.Setenv("ARGS_FILE", argsFile)
 	codex := filepath.Join(dir, "codex")
 	body := `#!/bin/sh
+printf '%s\n' "$@" > "$ARGS_FILE"
 out=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output-last-message" ]; then
@@ -65,6 +68,16 @@ printf '{"ok":true}' > "$out"
 	}
 	if got != `{"ok":true}` {
 		t.Fatalf("unexpected codex output: %s", got)
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotArgs := string(args)
+	for _, want := range []string{"exec", "--ephemeral", "--sandbox", "read-only", "--ignore-rules", "--output-last-message", "--model", "gpt-test", "-"} {
+		if !strings.Contains(gotArgs, want) {
+			t.Fatalf("codex args missing %q:\n%s", want, gotArgs)
+		}
 	}
 }
 

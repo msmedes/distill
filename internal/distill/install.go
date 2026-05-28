@@ -104,6 +104,12 @@ func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (insta
 		return installPlan{}, fmt.Errorf("choose at least one product to watch")
 	}
 
+	backend, err := promptChoice(reader, out, "Extraction backend for observations", []string{extractionBackendClaude, extractionBackendCodex}, prefs.ExtractionBackend)
+	if err != nil {
+		return installPlan{}, err
+	}
+	prefs.ExtractionBackend = backend
+
 	unified, err := promptBool(reader, out, "Use one user-scoped instructions file at ~/.agents/AGENTS.md?", true)
 	if err != nil {
 		return installPlan{}, err
@@ -127,6 +133,30 @@ func promptInstallPlan(in io.Reader, out io.Writer, defaults preferences) (insta
 		return installPlan{}, err
 	}
 	return installPlan{preferences: prefs, bootstrapCount: bootstrapCount}, nil
+}
+
+func promptChoice(reader *bufio.Reader, out io.Writer, question string, choices []string, defaultValue string) (string, error) {
+	suffix := fmt.Sprintf(" [%s] ", defaultValue)
+	for {
+		fmt.Fprint(out, question, " (", strings.Join(choices, "/"), ")", suffix)
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		answer := strings.ToLower(strings.TrimSpace(line))
+		if answer == "" {
+			return defaultValue, nil
+		}
+		for _, choice := range choices {
+			if answer == choice {
+				return choice, nil
+			}
+		}
+		fmt.Fprintf(out, "please enter one of: %s\n", strings.Join(choices, ", "))
+		if errors.Is(err, io.EOF) {
+			return defaultValue, nil
+		}
+	}
 }
 
 func promptInt(reader *bufio.Reader, out io.Writer, question string, defaultValue int) (int, error) {
@@ -421,6 +451,8 @@ func xmlEscape(s string) string {
 func printInstallSummary(out io.Writer, prefs preferences) {
 	fmt.Fprintln(out, "saved distill preferences")
 	fmt.Fprintf(out, "  watch: %s\n", prefs.watchProduct())
+	fmt.Fprintf(out, "  extraction backend: %s\n", prefs.ExtractionBackend)
+	fmt.Fprintf(out, "  generation backend: %s\n", prefs.GenerationBackend)
 	if prefs.PromotionMode == promotionModeUnified {
 		fmt.Fprintf(out, "  user instructions: %s\n", prefs.AlwaysOnPath)
 	} else {

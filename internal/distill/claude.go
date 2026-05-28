@@ -35,7 +35,11 @@ func resolveModel(name string) (modelID, error) {
 // callClaude shells out to the local `claude` CLI in print mode. Reuses the
 // user's existing Claude Code auth — distill never touches an API key.
 func callClaude(ctx context.Context, model modelID, prompt string) (string, error) {
-	claudePath, env := resolveClaudeCommand("")
+	return callClaudeCommand(ctx, "", model, prompt)
+}
+
+func callClaudeCommand(ctx context.Context, override string, model modelID, prompt string) (string, error) {
+	claudePath, env := resolveClaudeCommand(override)
 	args := []string{
 		"-p",
 		"--model", string(model),
@@ -61,38 +65,25 @@ func callClaude(ctx context.Context, model modelID, prompt string) (string, erro
 }
 
 func callExtractor(ctx context.Context, prefs preferences, model string, prompt string) (string, error) {
-	switch prefs.ExtractionBackend {
+	return callConfiguredBackend(ctx, prefs, prefs.ExtractionBackend, model, prompt)
+}
+
+func callGeneration(ctx context.Context, prefs preferences, prompt string) (string, error) {
+	return callConfiguredBackend(ctx, prefs, prefs.GenerationBackend, prefs.GenerationModel, prompt)
+}
+
+func callConfiguredBackend(ctx context.Context, prefs preferences, backend, model, prompt string) (string, error) {
+	switch backend {
 	case extractionBackendClaude:
 		resolved, err := resolveModel(model)
 		if err != nil {
 			return "", err
 		}
-		claudePath, env := resolveClaudeCommand(prefs.ClaudeCommandPath)
-		args := []string{
-			"-p",
-			"--model", string(resolved),
-			"--output-format", "text",
-			"--no-session-persistence",
-			"--disable-slash-commands",
-		}
-		cmd, err := internalHarnessCommand(ctx, claudePath, args...)
-		if err != nil {
-			return "", err
-		}
-		cmd.Stdin = strings.NewReader(prompt)
-		cmd.Env = internalHarnessEnv(env)
-
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("claude exited: %w\nstderr: %s", err, truncate(stderr.String(), 2000))
-		}
-		return strings.TrimSpace(stdout.String()), nil
+		return callClaudeCommand(ctx, prefs.ClaudeCommandPath, resolved, prompt)
 	case extractionBackendCodex:
 		return callCodexExec(ctx, prefs, model, prompt)
 	default:
-		return "", fmt.Errorf("unknown extraction backend: %s", prefs.ExtractionBackend)
+		return "", fmt.Errorf("unknown model backend: %s", backend)
 	}
 }
 
@@ -106,7 +97,7 @@ func callCodexExec(ctx context.Context, prefs preferences, model string, prompt 
 	out.Close()
 	defer os.Remove(outPath)
 
-	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--output-last-message", outPath}
+	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--ignore-rules", "--output-last-message", outPath}
 	if strings.TrimSpace(model) != "" && model != "haiku" && model != "sonnet" && model != "opus" {
 		args = append(args, "--model", model)
 	}

@@ -37,6 +37,76 @@ func TestPreferencesExpandHomeAndRequireAbsolutePaths(t *testing.T) {
 	}
 }
 
+func TestNormalizeExtractionModelForBackend(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prefs, err := normalizePreferences(preferences{
+		ExtractionBackend: extractionBackendCodex,
+		ExtractionModel:   "haiku",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ExtractionModel != defaultCodexExtractionModel {
+		t.Fatalf("expected codex default model, got %s", prefs.ExtractionModel)
+	}
+
+	prefs, err = normalizePreferences(preferences{
+		ExtractionBackend: extractionBackendClaude,
+		ExtractionModel:   "gpt-5.5",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ExtractionModel != defaultClaudeExtractionModel {
+		t.Fatalf("expected claude default model, got %s", prefs.ExtractionModel)
+	}
+}
+
+func TestNormalizeGenerationModelForBackend(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prefs, err := normalizePreferences(preferences{
+		GenerationBackend: extractionBackendCodex,
+		GenerationModel:   "opus",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.GenerationModel != defaultCodexGenerationModel {
+		t.Fatalf("expected codex generation default, got %s", prefs.GenerationModel)
+	}
+
+	prefs, err = normalizePreferences(preferences{
+		GenerationBackend: extractionBackendClaude,
+		GenerationModel:   "gpt-5.5",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.GenerationModel != defaultClaudeGenerationModel {
+		t.Fatalf("expected claude generation default, got %s", prefs.GenerationModel)
+	}
+}
+
 func TestAlwaysOnDestinationRoutesByPromotionMode(t *testing.T) {
 	prefs := preferences{
 		PromotionMode:   promotionModeSeparate,

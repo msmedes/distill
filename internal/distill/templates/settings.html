@@ -164,6 +164,32 @@
       gap: 6px;
       flex-wrap: wrap;
     }
+    .model-set {
+      display: none;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .model-set.active {
+      display: flex;
+    }
+    .model-set .choice {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 116px;
+    }
+    .model-set .choice .line {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .model-set .choice .sub {
+      padding-left: 20px;
+      color: var(--fg-faint);
+      font-family: var(--sans);
+      font-size: 11px;
+      text-transform: none;
+    }
     .choice {
       display: inline-flex;
       align-items: center;
@@ -346,10 +372,26 @@
             </div>
           </div>
           <div class="row">
-            <div class="label">model / profile <span class="help" tabindex="0" data-help="The model or profile passed to the extraction backend. Claude uses model aliases; Codex would use model or profile options.">?</span></div>
+            <div class="label">model <span class="help" tabindex="0" data-help="The model passed to the extraction backend. The labels stay consistent while the underlying backend model changes.">?</span></div>
             <div class="control">
-              <input type="text" name="extraction_model" value="{{.Preferences.ExtractionModel}}">
-              <p class="hint">Claude accepts haiku / sonnet / opus. Codex passes non-Claude model names through to <code>codex exec --model</code>.</p>
+              <input type="hidden" name="extraction_model" value="{{.Preferences.ExtractionModel}}">
+              <div class="model-set {{if eq .Preferences.ExtractionBackend "claude"}}active{{end}}" data-model-set="extraction:claude">
+                {{range .ClaudeModels}}
+                <label class="choice {{if eq $.Preferences.ExtractionModel .Value}}selected{{end}}">
+                  <span class="line"><input type="radio" name="claude_extraction_model" value="{{.Value}}" data-default="{{if eq .Value "haiku"}}true{{end}}" {{if eq $.Preferences.ExtractionModel .Value}}checked{{end}}> {{.Label}}</span>
+                  <span class="sub">{{.Hint}}</span>
+                </label>
+                {{end}}
+              </div>
+              <div class="model-set {{if eq .Preferences.ExtractionBackend "codex"}}active{{end}}" data-model-set="extraction:codex">
+                {{range .CodexModels}}
+                <label class="choice {{if eq $.Preferences.ExtractionModel .Value}}selected{{end}}">
+                  <span class="line"><input type="radio" name="codex_extraction_model" value="{{.Value}}" data-default="{{if eq .Value "gpt-5.5"}}true{{end}}" {{if eq $.Preferences.ExtractionModel .Value}}checked{{end}}> {{.Label}}</span>
+                  <span class="sub">{{.Hint}}</span>
+                </label>
+                {{end}}
+              </div>
+              <p class="hint">Model choices follow the selected backend. Switching backend will pick that backend's default if the current model belongs to the other backend.</p>
             </div>
           </div>
           <div class="row">
@@ -357,6 +399,45 @@
             <div class="control path-grid">
               <input type="text" name="claude_command_path" value="{{if .Preferences.ClaudeCommandPath}}{{.Preferences.ClaudeCommandPath}}{{else}}{{.ClaudeCommand}}{{end}}">
               <input type="text" name="codex_command_path" value="{{if .Preferences.CodexCommandPath}}{{.Preferences.CodexCommandPath}}{{else}}{{.CodexCommand}}{{end}}">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>generation</h2>
+        <div class="grid">
+          <div class="row">
+            <div class="label">backend <span class="help" tabindex="0" data-help="The command Distill calls when proposing promotions and generating instructions or SKILL.md previews.">?</span></div>
+            <div class="control">
+              <div class="segmented">
+                <label class="choice {{if eq .Preferences.GenerationBackend "claude"}}selected{{end}}"><input type="radio" name="generation_backend" value="claude" {{if eq .Preferences.GenerationBackend "claude"}}checked{{end}}> claude -p</label>
+                <label class="choice {{if eq .Preferences.GenerationBackend "codex"}}selected{{end}}"><input type="radio" name="generation_backend" value="codex" {{if eq .Preferences.GenerationBackend "codex"}}checked{{end}}> codex exec</label>
+              </div>
+              <p class="hint">Generation is separate from extraction. It powers proposed promotions and the previews for instructions and skills.</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">model <span class="help" tabindex="0" data-help="The model used for synthesis and promotion generation. The labels stay consistent while the underlying backend model changes.">?</span></div>
+            <div class="control">
+              <input type="hidden" name="generation_model" value="{{.Preferences.GenerationModel}}">
+              <div class="model-set {{if eq .Preferences.GenerationBackend "claude"}}active{{end}}" data-model-set="generation:claude">
+                {{range .ClaudeModels}}
+                <label class="choice {{if eq $.Preferences.GenerationModel .Value}}selected{{end}}">
+                  <span class="line"><input type="radio" name="claude_generation_model" value="{{.Value}}" data-default="{{if eq .Value "opus"}}true{{end}}" {{if eq $.Preferences.GenerationModel .Value}}checked{{end}}> {{.Label}}</span>
+                  <span class="sub">{{.Hint}}</span>
+                </label>
+                {{end}}
+              </div>
+              <div class="model-set {{if eq .Preferences.GenerationBackend "codex"}}active{{end}}" data-model-set="generation:codex">
+                {{range .CodexModels}}
+                <label class="choice {{if eq $.Preferences.GenerationModel .Value}}selected{{end}}">
+                  <span class="line"><input type="radio" name="codex_generation_model" value="{{.Value}}" data-default="{{if eq .Value "gpt-5.5"}}true{{end}}" {{if eq $.Preferences.GenerationModel .Value}}checked{{end}}> {{.Label}}</span>
+                  <span class="sub">{{.Hint}}</span>
+                </label>
+                {{end}}
+              </div>
+              <p class="hint">Default is smartest. Use faster models only if proposal and artifact quality are still good enough.</p>
             </div>
           </div>
         </div>
@@ -460,11 +541,50 @@
           <div class="diag-row"><span>index</span><code>{{.SessionIndexStatus}}</code></div>
           <div class="diag-row"><span>automatic watch</span><code>{{if .Preferences.AutomaticWatch}}enabled{{else}}disabled{{end}}</code></div>
           <div class="diag-row"><span>extraction backend</span><code>{{.ExtractionBackend}}</code></div>
-          <div class="diag-row error"><span>last watcher error</span><code>{{.LastWatcherError}}</code></div>
+          <div class="diag-row"><span>generation backend</span><code>{{.Preferences.GenerationBackend}}</code></div>
+          <div class="diag-row {{if .LastWatcherError.HasError}}error{{end}}">
+            <span>last watcher error{{if .LastWatcherError.HasError}} · {{.LastWatcherError.TimeLabel}}{{end}}</span>
+            <code>{{.LastWatcherError.Message}}</code>
+          </div>
         </div>
       </section>
     </aside>
   </form>
 </div>
+<script>
+  const modelSets = document.querySelectorAll('[data-model-set]');
+
+  function syncModelSet(group) {
+    const backend = document.querySelector(`input[name="${group}_backend"]:checked`)?.value || 'claude';
+    const modelFallback = document.querySelector(`input[name="${group}_model"]`);
+    for (const set of Array.from(modelSets).filter((set) => set.dataset.modelSet?.startsWith(`${group}:`))) {
+      const active = set.dataset.modelSet === `${group}:${backend}`;
+      set.classList.toggle('active', active);
+      for (const input of set.querySelectorAll('input[type="radio"]')) {
+        input.disabled = !active;
+      }
+      if (active && !set.querySelector('input[type="radio"]:checked')) {
+        const fallback = set.querySelector('input[type="radio"][data-default="true"]') || set.querySelector('input[type="radio"]');
+        if (fallback) fallback.checked = true;
+      }
+      for (const choice of set.querySelectorAll('.choice')) {
+        const input = choice.querySelector('input[type="radio"]');
+        choice.classList.toggle('selected', Boolean(input?.checked));
+      }
+    }
+    const selected = document.querySelector(`[data-model-set="${group}:${backend}"] input[type="radio"]:checked`);
+    if (selected && modelFallback) modelFallback.value = selected.value;
+  }
+
+  for (const group of ['extraction', 'generation']) {
+    for (const input of document.querySelectorAll(`input[name="${group}_backend"]`)) {
+      input.addEventListener('change', () => syncModelSet(group));
+    }
+    for (const input of document.querySelectorAll(`input[name$="_${group}_model"]`)) {
+      input.addEventListener('change', () => syncModelSet(group));
+    }
+    syncModelSet(group);
+  }
+</script>
 </body>
 </html>

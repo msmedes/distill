@@ -220,6 +220,8 @@ type settingsData struct {
 	Preferences        preferences
 	WatchProduct       product
 	ExtractionBackend  string
+	ClaudeModels       []modelOption
+	CodexModels        []modelOption
 	ClaudeCommand      string
 	CodexCommand       string
 	IndexedClaude      int
@@ -229,7 +231,13 @@ type settingsData struct {
 	UnprocessedClaude  int
 	UnprocessedCodex   int
 	SessionIndexStatus string
-	LastWatcherError   string
+	LastWatcherError   watcherErrorInfo
+}
+
+type watcherErrorInfo struct {
+	HasError  bool
+	Message   string
+	TimeLabel string
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -698,7 +706,9 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		prefs.WatchCodex = r.FormValue("watch_codex") == "on"
 		prefs.AutomaticWatch = r.FormValue("automatic_watch") == "on"
 		prefs.ExtractionBackend = r.FormValue("extraction_backend")
-		prefs.ExtractionModel = r.FormValue("extraction_model")
+		prefs.ExtractionModel = extractionModelFromForm(r, prefs.ExtractionBackend)
+		prefs.GenerationBackend = r.FormValue("generation_backend")
+		prefs.GenerationModel = generationModelFromForm(r, prefs.GenerationBackend)
 		prefs.ClaudeCommandPath = r.FormValue("claude_command_path")
 		prefs.CodexCommandPath = r.FormValue("codex_command_path")
 		prefs.WatchInterval = r.FormValue("watch_interval")
@@ -729,6 +739,28 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
+func extractionModelFromForm(r *http.Request, backend string) string {
+	return backendModelFromForm(r, backend, "extraction_model", "claude_extraction_model", "codex_extraction_model")
+}
+
+func generationModelFromForm(r *http.Request, backend string) string {
+	return backendModelFromForm(r, backend, "generation_model", "claude_generation_model", "codex_generation_model")
+}
+
+func backendModelFromForm(r *http.Request, backend, fallbackName, claudeName, codexName string) string {
+	switch backend {
+	case extractionBackendCodex:
+		if model := r.FormValue(codexName); strings.TrimSpace(model) != "" {
+			return model
+		}
+	case extractionBackendClaude:
+		if model := r.FormValue(claudeName); strings.TrimSpace(model) != "" {
+			return model
+		}
+	}
+	return r.FormValue(fallbackName)
+}
+
 func parsePositiveIntForm(r *http.Request, name string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
 	if err != nil || n <= 0 {
@@ -747,6 +779,8 @@ func (s *server) renderSettings(w http.ResponseWriter) {
 		Preferences:        prefs,
 		WatchProduct:       prefs.watchProduct(),
 		ExtractionBackend:  prefs.ExtractionBackend,
+		ClaudeModels:       claudeExtractionModelOptions,
+		CodexModels:        codexExtractionModelOptions,
 		ClaudeCommand:      resolvedCommandLabel("claude", prefs.ClaudeCommandPath),
 		CodexCommand:       resolvedCommandLabel("codex", prefs.CodexCommandPath),
 		SessionIndexStatus: "index unavailable",
@@ -823,19 +857,55 @@ func settingsSessionCounts(p paths) (indexedClaude, indexedCodex, processedClaud
 	return
 }
 
-func latestWatcherError(p paths) string {
-	b, err := os.ReadFile(filepath.Join(p.stateDir, "watch.log"))
+func latestWatcherError(p paths) watcherErrorInfo {
+	path := filepath.Join(p.stateDir, "watch.log")
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return "none recorded"
+		return watcherErrorInfo{Message: "none recorded"}
 	}
+	info, _ := os.Stat(path)
 	lines := strings.Split(string(b), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if strings.Contains(line, "error:") || strings.Contains(line, "failed") {
-			return line
+			return watcherErrorInfo{
+				HasError:  true,
+				Message:   line,
+				TimeLabel: watcherErrorTimeLabel(line, info),
+			}
 		}
 	}
-	return "none recorded"
+	return watcherErrorInfo{Message: "none recorded"}
+}
+
+func watcherErrorTimeLabel(line string, info os.FileInfo) string {
+	if t, ok := parseWatcherLogTimestamp(line); ok {
+		return formatSettingsTime(t)
+	}
+	if info != nil {
+		return "log updated " + formatSettingsTime(info.ModTime())
+	}
+	return "time unknown"
+}
+
+func parseWatcherLogTimestamp(line string) (time.Time, bool) {
+	if fields := strings.Fields(line); len(fields) > 0 {
+		if t, err := time.Parse(time.RFC3339, fields[0]); err == nil {
+			return t, true
+		}
+	}
+	for _, layout := range []string{"2006/01/02 15:04:05", "2006-01-02 15:04:05"} {
+		if len(line) >= len(layout) {
+			if t, err := time.ParseInLocation(layout, line[:len(layout)], time.Local); err == nil {
+				return t, true
+			}
+		}
+	}
+	return time.Time{}, false
+}
+
+func formatSettingsTime(t time.Time) string {
+	return t.Local().Format("2006-01-02 15:04:05 MST")
 }
 
 // handleObsAction dispatches POSTs of the shape /obs/{id}/{action}.
@@ -979,7 +1049,12 @@ func (s *server) handleSynthesize(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
-	added, err := synthesizeProposals(ctx, s.paths, modelSonnet)
+	prefs, err := readPreferences(s.paths)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	added, err := synthesizeProposals(ctx, s.paths, prefs)
 	if err != nil {
 		log.Printf("synthesize: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

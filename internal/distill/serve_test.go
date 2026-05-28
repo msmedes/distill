@@ -127,6 +127,9 @@ func TestHelpPageRenders(t *testing.T) {
 
 func TestSettingsPageRendersMockConfiguration(t *testing.T) {
 	s := testServer(t)
+	if err := os.WriteFile(filepath.Join(s.paths.stateDir, "watch.log"), []byte("2026-05-28T14:25:00-07:00 watch pass failed: boom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := writePreferences(s.paths, preferences{
 		WatchClaude:     true,
 		WatchCodex:      true,
@@ -151,11 +154,16 @@ func TestSettingsPageRendersMockConfiguration(t *testing.T) {
 	for _, want := range []string{
 		"distill<span class=\"dot\">.</span> settings",
 		"extraction",
+		"generation",
 		"claude -p",
 		"codex exec",
+		"smartest",
+		"GPT-5.4 Mini",
 		"watched products",
 		"target policy",
 		"diagnostics",
+		"last watcher error · 2026-05-28",
+		"watch pass failed: boom",
 		"save settings",
 	} {
 		if !strings.Contains(body, want) {
@@ -164,11 +172,33 @@ func TestSettingsPageRendersMockConfiguration(t *testing.T) {
 	}
 }
 
+func TestLatestWatcherErrorFallsBackToLogModTime(t *testing.T) {
+	s := testServer(t)
+	path := filepath.Join(s.paths.stateDir, "watch.log")
+	if err := os.WriteFile(path, []byte("watch pass failed: old log format\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Date(2026, 5, 28, 21, 26, 0, 0, time.UTC)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	got := latestWatcherError(s.paths)
+	if !got.HasError || got.Message != "watch pass failed: old log format" {
+		t.Fatalf("unexpected watcher error info: %#v", got)
+	}
+	if !strings.HasPrefix(got.TimeLabel, "log updated ") {
+		t.Fatalf("expected log-modtime fallback, got %#v", got)
+	}
+}
+
 func TestSettingsPostPersistsConfiguration(t *testing.T) {
 	s := testServer(t)
 	form := url.Values{
 		"extraction_backend":        {"codex"},
-		"extraction_model":          {"gpt-5.1-codex-max"},
+		"codex_extraction_model":    {"gpt-5.4"},
+		"generation_backend":        {"codex"},
+		"codex_generation_model":    {"gpt-5.5"},
 		"claude_command_path":       {"/usr/local/bin/claude"},
 		"codex_command_path":        {"/usr/local/bin/codex"},
 		"watch_claude":              {"on"},
@@ -202,8 +232,11 @@ func TestSettingsPostPersistsConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.ExtractionBackend != extractionBackendCodex || prefs.ExtractionModel != "gpt-5.1-codex-max" {
+	if prefs.ExtractionBackend != extractionBackendCodex || prefs.ExtractionModel != "gpt-5.4" {
 		t.Fatalf("unexpected backend prefs: %#v", prefs)
+	}
+	if prefs.GenerationBackend != extractionBackendCodex || prefs.GenerationModel != "gpt-5.5" {
+		t.Fatalf("unexpected generation prefs: %#v", prefs)
 	}
 	if !prefs.WatchClaude || prefs.WatchCodex {
 		t.Fatalf("unexpected watched products: %#v", prefs)
