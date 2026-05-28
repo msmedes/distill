@@ -1,7 +1,9 @@
 package distill
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +36,111 @@ func TestPreferencesExpandHomeAndRequireAbsolutePaths(t *testing.T) {
 
 	if _, err := normalizePreferences(preferences{AlwaysOnPath: "AGENTS.md", SkillsDir: "~/skills"}); err == nil {
 		t.Fatal("expected relative always-on path to fail")
+	}
+}
+
+func TestNormalizeExtractionModelDefaultsWhenMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prefs, err := normalizePreferences(preferences{
+		ExtractionBackend: extractionBackendCodex,
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ExtractionModel != defaultCodexExtractionModel {
+		t.Fatalf("expected codex default model, got %s", prefs.ExtractionModel)
+	}
+}
+
+func TestNormalizeExtractionModelRejectsWrongBackendModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_, err := normalizePreferences(preferences{
+		ExtractionBackend: extractionBackendClaude,
+		ExtractionModel:   "gpt-5.5",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err == nil {
+		t.Fatal("expected invalid claude extraction model to fail")
+	}
+	if got, want := err.Error(), "extraction model must be one of"; !strings.Contains(got, want) {
+		t.Fatalf("expected %q in error, got %q", want, got)
+	}
+}
+
+func TestNormalizeGenerationModelDefaultsWhenMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prefs, err := normalizePreferences(preferences{
+		GenerationBackend: extractionBackendCodex,
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.GenerationModel != defaultCodexGenerationModel {
+		t.Fatalf("expected codex generation default, got %s", prefs.GenerationModel)
+	}
+}
+
+func TestNormalizeGenerationModelRejectsWrongBackendModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_, err := normalizePreferences(preferences{
+		GenerationBackend: extractionBackendClaude,
+		GenerationModel:   "gpt-5.5",
+		AlwaysOnPath:      filepath.Join(home, "AGENTS.md"),
+		ClaudeMDPath:      filepath.Join(home, "CLAUDE.md"),
+		CodexAgentsPath:   filepath.Join(home, "CODEX_AGENTS.md"),
+		SkillsDir:         filepath.Join(home, "skills"),
+	})
+	if err == nil {
+		t.Fatal("expected invalid claude generation model to fail")
+	}
+	if got, want := err.Error(), "generation model must be one of"; !strings.Contains(got, want) {
+		t.Fatalf("expected %q in error, got %q", want, got)
+	}
+}
+
+func TestReadPreferencesDefaultsMissingModelsForSelectedBackends(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	p := paths{preferencesFile: filepath.Join(home, "preferences.json")}
+	if err := os.WriteFile(p.preferencesFile, []byte(`{
+  "extraction_backend": "codex",
+  "generation_backend": "codex",
+  "always_on_path": "/tmp/AGENTS.md",
+  "claude_md_path": "/tmp/CLAUDE.md",
+  "codex_agents_path": "/tmp/CODEX_AGENTS.md",
+  "skills_dir": "/tmp/skills"
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prefs, err := readPreferences(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ExtractionModel != defaultCodexExtractionModel {
+		t.Fatalf("expected missing extraction model to default for codex, got %s", prefs.ExtractionModel)
+	}
+	if prefs.GenerationModel != defaultCodexGenerationModel {
+		t.Fatalf("expected missing generation model to default for codex, got %s", prefs.GenerationModel)
 	}
 }
 

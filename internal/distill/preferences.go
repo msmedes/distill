@@ -16,6 +16,8 @@ type preferences struct {
 	AutomaticWatch          bool   `json:"automatic_watch"`
 	ExtractionBackend       string `json:"extraction_backend"`
 	ExtractionModel         string `json:"extraction_model"`
+	GenerationBackend       string `json:"generation_backend"`
+	GenerationModel         string `json:"generation_model"`
 	ClaudeCommandPath       string `json:"claude_command_path"`
 	CodexCommandPath        string `json:"codex_command_path"`
 	WatchInterval           string `json:"watch_interval"`
@@ -36,11 +38,22 @@ type preferences struct {
 	ProjectSkillsDir        string `json:"project_skills_dir"`
 }
 
+type modelOption struct {
+	Value string
+	Label string
+	Hint  string
+}
+
 const (
 	promotionModeUnified           = "unified"
 	promotionModeSeparate          = "separate"
 	extractionBackendClaude        = "claude"
 	extractionBackendCodex         = "codex"
+	defaultClaudeExtractionModel   = "haiku"
+	defaultCodexExtractionModel    = "gpt-5.5"
+	defaultGenerationBackend       = extractionBackendClaude
+	defaultClaudeGenerationModel   = "opus"
+	defaultCodexGenerationModel    = "gpt-5.5"
 	defaultWatchInterval           = "1h"
 	defaultQuietFor                = "10m"
 	defaultWebRunBatchLimit        = 5
@@ -53,6 +66,18 @@ const (
 	defaultProjectSkillsDir        = ".agents/skills"
 )
 
+var claudeExtractionModelOptions = []modelOption{
+	{Value: "haiku", Label: "fastest", Hint: "Haiku"},
+	{Value: "sonnet", Label: "balanced", Hint: "Sonnet"},
+	{Value: "opus", Label: "smartest", Hint: "Opus"},
+}
+
+var codexExtractionModelOptions = []modelOption{
+	{Value: "gpt-5.4-mini", Label: "fastest", Hint: "GPT-5.4 Mini"},
+	{Value: "gpt-5.4", Label: "balanced", Hint: "GPT-5.4"},
+	{Value: "gpt-5.5", Label: "smartest", Hint: "GPT-5.5"},
+}
+
 func defaultPreferences() (preferences, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -63,7 +88,9 @@ func defaultPreferences() (preferences, error) {
 		WatchCodex:              true,
 		AutomaticWatch:          true,
 		ExtractionBackend:       extractionBackendClaude,
-		ExtractionModel:         "haiku",
+		ExtractionModel:         defaultClaudeExtractionModel,
+		GenerationBackend:       defaultGenerationBackend,
+		GenerationModel:         defaultClaudeGenerationModel,
 		WatchInterval:           defaultWatchInterval,
 		QuietFor:                defaultQuietFor,
 		WebRunBatchLimit:        defaultWebRunBatchLimit,
@@ -97,10 +124,28 @@ func readPreferences(p paths) (preferences, error) {
 	if len(strings.TrimSpace(string(b))) == 0 {
 		return prefs, nil
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return preferences{}, fmt.Errorf("parsing %s: %w", p.preferencesFile, err)
+	}
 	if err := json.Unmarshal(b, &prefs); err != nil {
 		return preferences{}, fmt.Errorf("parsing %s: %w", p.preferencesFile, err)
 	}
+	if _, ok := fields["extraction_model"]; !ok {
+		prefs.ExtractionModel = ""
+	}
+	if _, ok := fields["generation_model"]; !ok {
+		prefs.GenerationModel = ""
+	}
 	return normalizePreferences(prefs)
+}
+
+func readPreferencesFromDefaultPaths() (preferences, error) {
+	p, err := resolvePaths()
+	if err != nil {
+		return preferences{}, err
+	}
+	return readPreferences(p)
 }
 
 func writePreferences(p paths, prefs preferences) error {
@@ -146,8 +191,8 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	if prefs.ExtractionBackend == "" {
 		prefs.ExtractionBackend = defaults.ExtractionBackend
 	}
-	if prefs.ExtractionModel == "" {
-		prefs.ExtractionModel = defaults.ExtractionModel
+	if prefs.GenerationBackend == "" {
+		prefs.GenerationBackend = defaults.GenerationBackend
 	}
 	if strings.TrimSpace(prefs.WatchInterval) == "" {
 		prefs.WatchInterval = defaults.WatchInterval
@@ -184,6 +229,17 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	}
 	if prefs.ExtractionBackend != extractionBackendClaude && prefs.ExtractionBackend != extractionBackendCodex {
 		return preferences{}, fmt.Errorf("extraction backend must be %q or %q: %s", extractionBackendClaude, extractionBackendCodex, prefs.ExtractionBackend)
+	}
+	if prefs.GenerationBackend != extractionBackendClaude && prefs.GenerationBackend != extractionBackendCodex {
+		return preferences{}, fmt.Errorf("generation backend must be %q or %q: %s", extractionBackendClaude, extractionBackendCodex, prefs.GenerationBackend)
+	}
+	prefs.ExtractionModel, err = normalizeModelForBackend("extraction model", prefs.ExtractionBackend, prefs.ExtractionModel, defaultExtractionModel(prefs.ExtractionBackend))
+	if err != nil {
+		return preferences{}, err
+	}
+	prefs.GenerationModel, err = normalizeModelForBackend("generation model", prefs.GenerationBackend, prefs.GenerationModel, defaultGenerationModel(prefs.GenerationBackend))
+	if err != nil {
+		return preferences{}, err
 	}
 	if _, err := time.ParseDuration(prefs.WatchInterval); err != nil {
 		return preferences{}, fmt.Errorf("watch interval must be a Go duration: %w", err)
@@ -246,6 +302,62 @@ func normalizePreferences(prefs preferences) (preferences, error) {
 	prefs.ProjectInstructionsFile = filepath.Clean(prefs.ProjectInstructionsFile)
 	prefs.ProjectSkillsDir = filepath.Clean(prefs.ProjectSkillsDir)
 	return prefs, nil
+}
+
+func normalizeModelForBackend(field, backend, model, defaultModel string) (string, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return defaultModel, nil
+	}
+	options := modelOptionsForBackend(backend)
+	if containsModelOption(options, model) {
+		return model, nil
+	}
+	return "", fmt.Errorf("%s must be one of %s for %s backend: %s", field, strings.Join(modelOptionValues(options), ", "), backend, model)
+}
+
+func defaultExtractionModel(backend string) string {
+	switch backend {
+	case extractionBackendCodex:
+		return defaultCodexExtractionModel
+	default:
+		return defaultClaudeExtractionModel
+	}
+}
+
+func defaultGenerationModel(backend string) string {
+	switch backend {
+	case extractionBackendCodex:
+		return defaultCodexGenerationModel
+	default:
+		return defaultClaudeGenerationModel
+	}
+}
+
+func modelOptionsForBackend(backend string) []modelOption {
+	switch backend {
+	case extractionBackendCodex:
+		return codexExtractionModelOptions
+	default:
+		return claudeExtractionModelOptions
+	}
+}
+
+func modelOptionValues(options []modelOption) []string {
+	values := make([]string, 0, len(options))
+	for _, option := range options {
+		values = append(values, option.Value)
+	}
+	return values
+}
+
+func containsModelOption(options []modelOption, value string) bool {
+	for _, option := range options {
+		if option.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 func expandOptionalCommandPath(path string) (string, error) {

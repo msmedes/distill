@@ -13,7 +13,7 @@ For the load-bearing design decisions, see [`_meta/adr/`](./_meta/adr).
 
 ## Install
 
-distill calls the `claude` CLI for all LLM work, so it rides your existing Claude Code login — no Anthropic API key needed. See [ADR 0002](./_meta/adr/0002-claude-p-for-llm-calls.md). Install Claude Code first: <https://docs.claude.com/en/docs/claude-code>.
+distill model calls can run through either `claude -p` or `codex exec`. Extraction and generation have separate backend/model settings in `/settings`: extraction turns sessions into observations; generation proposes promotions and creates instruction/skill previews. See [ADR 0002](./_meta/adr/0002-claude-p-for-llm-calls.md) and [ADR 0008](./_meta/adr/0008-selectable-extraction-backend.md).
 
 ### Homebrew (macOS / Linux)
 
@@ -33,14 +33,14 @@ cd distill
 go build -o distill ./cmd/distill
 ```
 
-A single static binary lands at `./distill`. No runtime dependencies beyond `claude`.
+A single static binary lands at `./distill`. Install the local CLI for whichever model backend you choose.
 
 ## Quickstart
 
 ```sh
-# 0. Configure watched products, promotion destinations, and initial bootstrap
+# 0. Configure watched products, extraction backend, promotion destinations, and initial bootstrap
 ./distill install
-# installer prints the web UI command and URL
+# installer prints the web UI command and URL; generation backend is configurable in /settings
 
 # 1. If you skipped install-time bootstrap, process a bounded recent slice
 ./distill extract --recent 15
@@ -70,7 +70,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `distill serve`      | Run the curation web UI (default `http://127.0.0.1:7373`). |
 | `distill list`       | Plain-text dump of accumulated observations. |
 | `distill compact`    | Dedup evidence entries (e.g. after `/resume` duplicated turns). |
-| `distill install`    | Interactive setup for watched products, promotion destinations, bounded bootstrap, and automatic watching. |
+| `distill install`    | Interactive setup for watched products, extraction backend, promotion destinations, bounded bootstrap, and automatic watching. |
 | `distill agents`     | Detailed operating guide for coding agents answering questions about distill. |
 | `distill help`       | Usage. |
 
@@ -84,7 +84,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `--recent <n>`           | `1`    | Process the N most recent sessions across all projects. |
 | `--new`                  | off    | Process every unprocessed session (combine with `--recent` to cap). |
 | `--dry-run`              | off    | Show what would be extracted without writing. |
-| `--model <haiku\|sonnet>` | `haiku` | Model for the per-session pass. |
+| `--model <model>` | configured by settings, default `haiku` | Allowlisted model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific model names. |
 | `--max-transcript-chars` | `60000` | Truncate rendered user-message excerpts longer than this. |
 | `--min-user-turns <n>` | `2` | Skip sessions with fewer user turns unless correction/preference language appears. |
 | `--min-user-chars <n>` | `200` | Skip sessions with fewer user-message chars unless correction/preference language appears. |
@@ -99,7 +99,7 @@ In the UI, each observation has actions hidden behind a pencil toggle — **igno
 | `--product <claude\|codex\|all>` | `all` | Which product's sessions to process. |
 | `--interval <duration>` | `1h` | Time between scans. Go duration syntax, e.g. `30m`, `2h`. |
 | `--quiet-for <duration>` | `10m` | Ignore transcripts modified more recently than this. |
-| `--model <haiku\|sonnet>` | `haiku` | Model for the per-session pass. |
+| `--model <model>` | configured by settings, default `haiku` | Allowlisted model for the per-session pass. Settings label choices as fastest / balanced / smartest and map them to backend-specific model names. |
 | `--no-skip` | off | Disable cheap local skipping for short low-signal sessions. |
 
 ### `serve` flags
@@ -132,12 +132,12 @@ Promoted observations default to:
 
 - **User skills:** `~/.agents/skills/<name>/SKILL.md` — LLM-generated from claim + evidence + notes.
 - **Project skills:** `<project>/.agents/skills/<name>/SKILL.md`
-- **User instructions:** Opus rewrites the configured user instruction file to integrate the observation into the existing structure.
-- **Project instructions:** Opus rewrites `<project>/AGENTS.md`.
+- **User instructions:** the configured generation backend rewrites the configured user instruction file to integrate the observation into the existing structure.
+- **Project instructions:** the configured generation backend rewrites `<project>/AGENTS.md`.
 
 distill writes portable artifacts. It does not copy or symlink them into every agent runtime's native location; configure your agent to read the portable path when needed.
 
-`distill install` asks whether to watch Claude Code, Codex, or both. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether user-scoped instruction promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Project-scoped instruction promotions derive their destination from the session cwd. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. During setup, distill asks how many recent quiet sessions to process (default 15; enter 0 to skip), then baselines the rest of the existing quiet backlog so the watcher starts from "now" instead of backfilling the whole machine. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
+`distill install` asks whether to watch Claude Code, Codex, or both, then asks whether observation extraction should use `claude -p` or `codex exec`. It also inspects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.codex/AGENTS.md`, then asks whether user-scoped instruction promotions should go to one shared `~/.agents/AGENTS.md` file or stay product-specific (`~/.claude/CLAUDE.md` for Claude, `~/.codex/AGENTS.md` for Codex). Project-scoped instruction promotions derive their destination from the session cwd. It creates destination directories and writes the choice to `~/.distill/preferences.json`; it does not move or symlink existing instruction files. During setup, distill asks how many recent quiet sessions to process (default 15; enter 0 to skip), then baselines the rest of the existing quiet backlog so the watcher starts from "now" instead of backfilling the whole machine. For Homebrew installs, use `brew services start distill` to run the watcher automatically. For non-Homebrew installs, `distill install` can write and load a user launchd agent.
 
 For agents trying to answer how distill works from an installed binary, run:
 
@@ -157,12 +157,12 @@ Two passes, two cadences (see [ADR 0003](./_meta/adr/0003-two-cadence-pipeline.m
                           └────────────┬─────────────┘
                                        │
                                        ▼
-   distill extract  ──── Haiku ───►  observation deltas  ──►  ~/.distill/observations.jsonl
+   distill extract  ──── configured backend ───►  observation deltas  ──►  ~/.distill/observations.jsonl
    (per session, cheap)                  (new / reinforce
                                           / contradict)
                                        │
                                        ▼
-   distill synthesize  ─── Sonnet ──►  attach proposals  ──►  same store
+   distill synthesize  ─── configured generation backend ───►  attach proposals  ──►  same store
    (across the corpus,                   to active obs
     on demand)
                                        │
@@ -189,10 +189,10 @@ Known follow-ups:
 
 `distill watch` polls Claude Code and Codex transcript directories and processes sessions that have been quiet long enough. This keeps automatic ingestion consistent across both products instead of relying on product-specific hook lifecycle events. After `distill install`, already-existing quiet sessions are baselined so the watcher catches future sessions without doing an install-time historical backfill.
 
-The extractor does a cheap local pass before calling Claude. Short sessions with no correction/preference markers are marked processed without an LLM call, and non-skipped sessions send user-authored turns plus bounded local assistant context around high-signal corrections. Existing observations are reduced to a relevant capped subset.
+The extractor does a cheap local pass before calling the configured extraction backend. Short sessions with no correction/preference markers are marked processed without an LLM call, and non-skipped sessions send user-authored turns plus bounded local assistant context around high-signal corrections. Existing observations are reduced to a relevant capped subset.
 
 ```sh
-distill install                       # choose watched products and destinations
+distill install                       # choose watched products, extraction backend, and destinations
 distill watch                         # scan every hour, require 10m quiet
 distill watch --interval 2h           # scan every two hours
 distill watch --product codex         # watch only Codex transcripts

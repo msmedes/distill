@@ -28,9 +28,9 @@ const usage = `distill — extract observations about you from Claude Code and C
 
 Usage:
   distill agents                                                       # operating guide for coding agents — start here
-  distill extract    [--codex|--claude|--product claude|codex|all] [--session <id>] [--recent <n>] [--new] [--dry-run] [--model haiku|sonnet]
+  distill extract    [--codex|--claude|--product claude|codex|all] [--session <id>] [--recent <n>] [--new] [--dry-run] [--model <model>]
   distill watch      [--product claude|codex|all] [--interval 1h] [--quiet-for 10m]
-  distill synthesize [--model haiku|sonnet|opus]
+  distill synthesize [--backend claude|codex] [--model <model>]
   distill list
   distill serve      [--port <n>] [--host <addr>]
   distill compact

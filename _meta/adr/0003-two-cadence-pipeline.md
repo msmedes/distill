@@ -11,17 +11,17 @@ We also need to control *when* expensive work happens. Per-session work should b
 
 ## Decision
 
-Two passes with different cadences and different models:
+Two passes with different cadences and independently configured model backends:
 
-- **Extract** runs once per session. Uses Haiku. Reads one transcript and emits **observation deltas** (new candidates, reinforcements, contradictions). Bias: aggressively conservative — most sessions emit zero observations.
-- **Synthesize** runs on demand, triggered by the user clicking *propose promotions*. Uses Sonnet. Reads all `active` observations and attaches **Proposals** recommending skill or CLAUDE.md promotion to a small subset.
+- **Extract** runs once per session. Defaults to the fastest extraction model. Reads one transcript and emits **observation deltas** (new candidates, reinforcements, contradictions). Bias: aggressively conservative — most sessions emit zero observations.
+- **Synthesize** runs on demand, triggered by the user clicking *propose promotions*. Defaults to the smartest generation model. Reads all `active` observations and attaches **Proposals** recommending skill or AGENTS.md promotion to a small subset.
 
 The two passes never overlap in scope. Extract never proposes; Synthesize never reads transcripts.
 
 ## Consequences
 
 - **+** Per-session cost stays bounded. The user can extract 50+ sessions without thinking about it.
-- **+** Synthesis is rare enough that Sonnet is acceptable for the better judgment.
+- **+** Synthesis is rare enough that the smartest configured generation model is acceptable for the better judgment.
 - **+** The two prompts can evolve independently. Prompt changes in one don't invalidate state produced by the other.
 - **−** Two prompts to maintain, two failure modes to debug.
 - **−** Synthesized proposals can go stale if many new observations land after the last synthesize run. The UI offers no warning about staleness yet — open question.

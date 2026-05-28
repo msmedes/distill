@@ -19,7 +19,7 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	}
 	var out bytes.Buffer
 
-	plan, err := promptInstallPlan(strings.NewReader("\n\n\n\n\n"), &out, defaults)
+	plan, err := promptInstallPlan(strings.NewReader("\n\n\n\n\n\n"), &out, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +30,9 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	}
 	if prefs.PromotionMode != promotionModeUnified {
 		t.Fatalf("expected unified promotion mode, got %s", prefs.PromotionMode)
+	}
+	if prefs.ExtractionBackend != extractionBackendClaude {
+		t.Fatalf("expected claude extraction backend, got %s", prefs.ExtractionBackend)
 	}
 	if !prefs.AutomaticWatch {
 		t.Fatal("expected automatic watcher by default")
@@ -42,6 +45,9 @@ func TestPromptInstallPreferencesDefaultsToWatchingBothUnifiedAndAutomatic(t *te
 	}
 	if !strings.Contains(out.String(), "Watch Claude Code? [Y/n]") {
 		t.Fatalf("expected Claude prompt, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Extraction backend for observations (claude/codex) [claude]") {
+		t.Fatalf("expected extraction backend prompt, got %q", out.String())
 	}
 	if !strings.Contains(out.String(), "Process recent quiet sessions now? (0 to skip) [15]") {
 		t.Fatalf("expected bootstrap prompt, got %q", out.String())
@@ -56,7 +62,7 @@ func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
 	}
 	var out bytes.Buffer
 
-	plan, err := promptInstallPlan(strings.NewReader("y\ny\nn\n0\nn\n"), &out, defaults)
+	plan, err := promptInstallPlan(strings.NewReader("y\ny\ncodex\nn\n0\nn\n"), &out, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +70,9 @@ func TestPromptInstallPreferencesCanKeepSeparateDestinations(t *testing.T) {
 
 	if prefs.PromotionMode != promotionModeSeparate {
 		t.Fatalf("expected separate promotion mode, got %s", prefs.PromotionMode)
+	}
+	if prefs.ExtractionBackend != extractionBackendCodex {
+		t.Fatalf("expected codex extraction backend, got %s", prefs.ExtractionBackend)
 	}
 	if plan.bootstrapCount != 0 {
 		t.Fatalf("expected bootstrap count 0, got %d", plan.bootstrapCount)
@@ -271,6 +280,12 @@ func TestPrintInstallSummaryShowsWebUINextStep(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "open the web UI: distill serve") {
 		t.Fatalf("summary missing serve command:\n%s", got)
+	}
+	if !strings.Contains(got, "extraction backend: claude") {
+		t.Fatalf("summary missing extraction backend:\n%s", got)
+	}
+	if !strings.Contains(got, "generation backend: claude") {
+		t.Fatalf("summary missing generation backend:\n%s", got)
 	}
 	if !strings.Contains(got, "then visit: http://127.0.0.1:7373") {
 		t.Fatalf("summary missing web UI URL:\n%s", got)

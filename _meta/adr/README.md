@@ -9,3 +9,4 @@ Load-bearing decisions for distill. Each record is short — context, decision, 
 - [0005 — Evidence dedup by quote text, not by session id](./0005-evidence-dedup-by-quote.md)
 - [0006 — User-confirmed promotion, not autonomous skill creation](./0006-user-confirmed-promotion.md)
 - [0007 — Portable scoped artifacts](./0007-portable-scoped-artifacts.md)
+- [0008 — Selectable model backends](./0008-selectable-extraction-backend.md)

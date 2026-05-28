@@ -1,6 +1,6 @@
 # 0002. Reuse `claude -p` for LLM calls
 
-Status: Accepted
+Status: Accepted; superseded in part by [ADR 0008](./0008-selectable-extraction-backend.md) for configurable backend selection
 Date: 2026-05-21
 
 ## Context
@@ -10,6 +10,8 @@ distill makes LLM calls to extract observations from transcripts, synthesize pro
 ## Decision
 
 distill shells out to the local `claude` CLI in print mode: `claude -p --model <id> --output-format text`. It pipes the prompt to stdin and reads the response from stdout. The Go process never touches Anthropic credentials directly.
+
+Observation extraction and generation can now use either `claude -p` or `codex exec`; see ADR 0008. This ADR still explains why local CLI backends are preferred over direct API credentials.
 
 ## Consequences
 

@@ -21,7 +21,7 @@ One coding-agent conversation. Claude Code sessions are stored as JSONL at `~/.c
 _Avoid_: transcript (the rendered text inside a session), chat, thread.
 
 **Extract**:
-The per-session pass. Reads one session's transcript and emits observation deltas: new candidates, reinforcements of existing observations, or contradictions. Cheap (Haiku), runs once per session.
+The per-session pass. Reads one session's transcript and emits observation deltas: new candidates, reinforcements of existing observations, or contradictions. Runs once per session through the configured extraction backend (`claude -p` or `codex exec`).
 _Avoid_: parse, ingest, ingest.
 
 **Watch**:
@@ -29,11 +29,11 @@ The automatic ingestion loop. Polls Claude Code and Codex transcript directories
 _Avoid_: hook, daemon (unless discussing process supervision).
 
 **Bootstrap**:
-The install-time seeding step. The user chooses how many of their most-recent quiet Sessions to Extract (default 15; 0 to skip). All remaining quiet Sessions are marked processed in `state.json` without running Extract, so Watch starts at "now" instead of replaying history. Bounds first-run LLM cost without losing visibility into recent context.
+The install-time seeding step. The user chooses the extraction backend and how many of their most-recent quiet Sessions to Extract (default 15; 0 to skip). All remaining quiet Sessions are marked processed in `state.json` without running Extract, so Watch starts at "now" instead of replaying history. Bounds first-run LLM cost without losing visibility into recent context.
 _Avoid_: backfill (Bootstrap is bounded by design; backfill implies the opposite).
 
 **Synthesize**:
-The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to portable skills or instructions at user or project scope. Expensive (Sonnet), runs only when the user asks.
+The across-the-corpus pass. Reads all active observations and attaches **Proposals** recommending which should be promoted to portable skills or instructions at user or project scope. Uses the configured generation backend, runs only when the user asks.
 _Avoid_: review, audit.
 
 **Proposal**:
@@ -41,7 +41,7 @@ An LLM-attached suggestion on an observation that recommends a promotion artifac
 _Avoid_: recommendation, suggestion (these are too general).
 
 **Promotion**:
-The act of moving an observation's content into a target file — a new `SKILL.md` or an Opus-rewritten instructions file. Always user-confirmed via preview and commit; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md) and [ADR 0007](./_meta/adr/0007-portable-scoped-artifacts.md).
+The act of moving an observation's content into a target file — a new `SKILL.md` or a generation-backend-rewritten instructions file. Always user-confirmed via preview and commit; never autonomous. See [ADR 0006](./_meta/adr/0006-user-confirmed-promotion.md) and [ADR 0007](./_meta/adr/0007-portable-scoped-artifacts.md).
 _Avoid_: graduation, conversion.
 
 **Skill**:
@@ -49,7 +49,7 @@ A skill file at either the configured user skills directory, default `~/.agents/
 _Avoid_: rule (instruction entries are more rule-shaped; skills are situational).
 
 **Instructions**:
-An AGENTS.md-style instruction file. User-scoped instructions default to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). Project-scoped instructions write `<project>/AGENTS.md`. For instruction promotion, distill asks Opus to rewrite the destination file so the observation fits the existing structure and voice; there is no distill-managed section.
+An AGENTS.md-style instruction file. User-scoped instructions default to shared `~/.agents/AGENTS.md`; setup can keep Claude and Codex destinations separate (`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`). Project-scoped instructions write `<project>/AGENTS.md`. For instruction promotion, distill asks the configured generation backend to rewrite the destination file so the observation fits the existing structure and voice; there is no distill-managed section.
 _Avoid_: settings, config, profile.
 
 **Status**:
@@ -76,7 +76,7 @@ A maintenance command that dedups evidence entries within each observation by qu
 - An **Observation** has many **Evidence** entries; duplicate quotes are deduplicated at write time because Claude Code creates a fresh session file on every `/resume`, copying earlier turns verbatim.
 - An **Observation** also has a **Status**, an optional list of **Notes**, and an optional list of **Proposals**.
 - **Synthesize** reads all `active` observations and attaches **Proposals** to a subset; it does not modify any other field.
-- Accepting a **Proposal** opens a promotion preview. For a **Skill**, the preview contains the generated `SKILL.md` informed by claim + evidence + notes. For instructions, Opus rewrites the complete destination file and the user reviews the diff before commit.
+- Accepting a **Proposal** opens a promotion preview. For a **Skill**, the preview contains the generated `SKILL.md` informed by claim + evidence + notes. For instructions, the configured generation backend rewrites the complete destination file and the user reviews the diff before commit.
 - After promotion, the observation's status changes; it stays in the store with a `promoted_to` path but disappears from the default view.
 - Ignoring an observation sets `status = ignored`; it is hidden in the default view but can be unignored later.
 

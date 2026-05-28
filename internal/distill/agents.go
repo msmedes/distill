@@ -60,11 +60,11 @@ State and source files
 
 Important commands
   distill install
-    Interactive setup. Chooses watched products, promotion destinations, and
-    whether launchd should run distill watch at login. Setup asks how many
-    recent quiet sessions to process (default 15; 0 to skip), then marks the
-    rest of the existing quiet backlog processed so automatic watching starts
-    from "now" instead of backfilling every historical session.
+    Interactive setup. Chooses watched products, extraction backend, promotion
+    destinations, and whether launchd should run distill watch at login. Setup
+    asks how many recent quiet sessions to process (default 15; 0 to skip),
+    then marks the rest of the existing quiet backlog processed so automatic
+    watching starts from "now" instead of backfilling every historical session.
 
   distill extract --recent N
     Processes the N most recent sessions across the selected products.
@@ -82,8 +82,8 @@ Important commands
     baselines historical quiet sessions before starting it.
 
   distill synthesize
-    Runs the corpus-level proposal pass. It proposes promotions; it does not
-    apply them.
+    Runs the corpus-level proposal pass using the configured generation
+    backend. It proposes promotions; it does not apply them.
 
   distill serve
     Starts the local curation UI at http://127.0.0.1:7373 by default.
@@ -96,12 +96,27 @@ Important commands
     sessions copy prior turns into new session files.
 
 Extraction defaults
+  backend:
+    observation extraction uses the configured backend from
+    ~/.distill/preferences.json. Supported values are claude for claude -p and
+    codex for codex exec. This is independent from the source product being
+    processed.
+
   product:
     extract defaults to all; watch uses configured preferences unless
     --product is supplied.
 
   model:
-    haiku by default.
+    haiku by default for Claude extraction. Settings present semantic choices:
+    fastest, balanced, and smartest. Claude maps those to haiku, sonnet, and
+    opus. Codex maps them to gpt-5.4-mini, gpt-5.4, and gpt-5.5. Model values
+    are curated per backend; invalid explicit values fail instead of passing
+    through silently.
+
+  generation:
+    Proposal synthesis and promotion previews use their own configured backend
+    and model. The default is claude + smartest (Opus), but settings can switch
+    generation to codex with the same fastest/balanced/smartest labels.
 
   local skip:
     Sessions with no user/assistant turns are marked processed without an LLM
