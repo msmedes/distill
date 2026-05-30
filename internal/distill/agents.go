@@ -87,6 +87,9 @@ Important commands
 
   distill serve
     Starts the local curation UI at http://127.0.0.1:7373 by default.
+    Released binaries check GitHub releases once at startup and cache the
+    result in ~/.distill/update-check.json until local midnight. If a newer
+    version exists, the UI shows a small update banner.
 
   distill list
     Prints active observations as plain text.

@@ -40,6 +40,14 @@ func runServe(args []string) error {
 	if err := srv.loadTemplates(); err != nil {
 		return fmt.Errorf("loading templates: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	update, err := checkForUpdates(ctx, p, &http.Client{Timeout: 2 * time.Second}, time.Now())
+	cancel()
+	if err != nil {
+		log.Printf("update check skipped: %v", err)
+	} else {
+		srv.update = update
+	}
 	if prefs, err := readPreferences(p); err == nil {
 		startSessionIndexRefresh(p, prefs.watchProduct())
 	} else {
@@ -87,6 +95,7 @@ type server struct {
 	sessionsTmpl *template.Template
 	settingsTmpl *template.Template
 	previewTmpl  *template.Template
+	update       updateStatus
 }
 
 func (s *server) loadTemplates() error {
@@ -188,6 +197,7 @@ type indexData struct {
 	Filter             string
 	Types              []observationType
 	Preferences        preferences
+	Update             updateStatus
 }
 
 type sessionsData struct {
@@ -199,6 +209,7 @@ type sessionsData struct {
 	Filter         string
 	ProcessedCount int
 	ObservedCount  int
+	Update         updateStatus
 }
 
 type processedSessionView struct {
@@ -279,6 +290,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			typePreference, typeWorkflow, typeFriction, typeToolUse,
 		},
 		Preferences: prefs,
+		Update:      s.update,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -327,6 +339,7 @@ func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Filter:         filter,
 		ProcessedCount: stats.processed,
 		ObservedCount:  stats.observed,
+		Update:         s.update,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.sessionsTmpl.Execute(w, data); err != nil {

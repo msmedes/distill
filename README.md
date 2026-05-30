@@ -223,6 +223,8 @@ distill version          # or: distill --version, -v
 
 Homebrew installs report the released tag (e.g. `v0.2.9`). Source builds without a tagged ldflag fall back to the module version from `runtime/debug.BuildInfo` (e.g. `v0.2.9+dirty`), or `dev` if neither is available.
 
+When `distill serve` starts from a released binary, it checks the latest GitHub release once and caches the result in `~/.distill/update-check.json` until local midnight. If a newer version is available, the served UI shows a small update banner.
+
 **How do I upgrade?**
 
 ```sh

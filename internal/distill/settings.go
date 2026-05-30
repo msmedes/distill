@@ -28,6 +28,7 @@ type settingsData struct {
 	UnprocessedCodex   int
 	SessionIndexStatus string
 	LastWatcherError   watcherErrorInfo
+	Update             updateStatus
 }
 
 type watcherErrorInfo struct {
@@ -139,6 +140,7 @@ func (s *server) renderSettings(w http.ResponseWriter) {
 		CodexCommand:       resolvedCommandLabel("codex", prefs.CodexCommandPath),
 		SessionIndexStatus: "index unavailable",
 		LastWatcherError:   latestWatcherError(s.paths),
+		Update:             s.update,
 	}
 	data.IndexedClaude, data.IndexedCodex, data.ProcessedClaude, data.ProcessedCodex, data.UnprocessedClaude, data.UnprocessedCodex = settingsSessionCounts(s.paths)
 	if status, err := explainSessionIndex(s.paths); err == nil {
