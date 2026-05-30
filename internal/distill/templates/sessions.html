@@ -58,6 +58,34 @@
       text-decoration: none;
     }
     .meta a:hover { color: var(--fg); }
+    .update-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: -20px 0 24px;
+      padding: 8px 10px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: #fef3c7;
+      color: var(--fg);
+      font-size: 12px;
+    }
+    .update-banner strong { font-family: var(--mono); font-weight: 600; }
+    .update-banner code {
+      font-family: var(--mono);
+      color: var(--fg-soft);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .update-banner a {
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--mono);
+    }
+    .update-banner a:hover { color: var(--fg); }
     .sessions {
       display: grid;
       gap: 8px;
@@ -189,6 +217,15 @@
       <a href="/">observations</a> · <a href="/settings">settings</a> · {{.ObservedCount}} with observations · {{.ProcessedCount}} processed{{if eq .Filter "all"}} · all processed{{else}} · <a href="/sessions?filter=all">show all processed</a>{{end}}{{if .HasMore}} · showing {{.Shown}} newest · <a href="/sessions?filter={{.Filter}}&limit=500">show 500</a>{{end}}
     </div>
   </header>
+
+  {{if .Update.Available}}
+  <div class="update-banner">
+    <span><strong>{{.Update.LatestVersion}}</strong> available</span>
+    <code>running {{.Update.CurrentVersion}}</code>
+    {{if .Update.UpgradeCommand}}<code>{{.Update.UpgradeCommand}}</code>{{end}}
+    {{if .Update.ReleaseURL}}<a href="{{.Update.ReleaseURL}}">release</a>{{end}}
+  </div>
+  {{end}}
 
   {{if .Sessions}}
   <main class="sessions">

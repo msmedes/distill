@@ -104,6 +104,37 @@ func TestIndexDoesNotScanSessionsForRunControl(t *testing.T) {
 	}
 }
 
+func TestIndexShowsUpdateBanner(t *testing.T) {
+	s := testServer(t)
+	s.update = updateStatus{
+		Available:      true,
+		CurrentVersion: "v0.2.13",
+		LatestVersion:  "v0.2.14",
+		ReleaseURL:     "https://github.com/msmedes/distill/releases/tag/v0.2.14",
+		UpgradeCommand: "brew upgrade distill",
+	}
+	if err := writePreferences(s.paths, preferences{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeState(s.paths.stateFile, &stateFile{ProcessedSessions: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	s.handleIndex(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d\n%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"v0.2.14", "running v0.2.13", "brew upgrade distill", "release"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("update banner missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestHelpPageRenders(t *testing.T) {
 	s := &server{}
 	if err := s.loadTemplates(); err != nil {
